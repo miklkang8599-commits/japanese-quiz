@@ -7,54 +7,54 @@ import base64
 import urllib.parse
 
 # ==========================================
-# 🌟 程式特色與功能說明 (完全相容版)
+# 🌟 程式特色：跨平台智慧排版 (Smart Responsive)
 # ==========================================
-# 1. 【排版修復】：電腦版題目回歸，手機版按鈕自動流動換行，不再需要長距離滑動。
-# 2. 【核心音訊】：Base64 內嵌音訊，確保 Chrome 與 iPhone 播放器不再變灰。
-# 3. 【分詞保護】：保護長語塊（如：見つかりません），確保按鈕邏輯正確。
-# 4. 【同步確保】：切換章節立刻重置狀態，電腦手機同步不卡關。
+# 1. 【自動辨識裝置】：電腦版維持標準比例，手機版自動壓縮邊距，避免切掉頂部。
+# 2. 【功能鍵橫流】：手機端功能鍵強制橫排，騰出空間給下方的單字按鈕。
+# 3. 【題目置頂修復】：移除手機版多餘的空白，確保中文題目一眼就能看到。
+# 4. 【Base64 強效音訊】：修復 0:00 灰色條，Chrome 與 iPhone 都能直接播。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文重組練習器", layout="wide")
 
-# 精準 CSS：區分「題目區」與「按鈕流動區」
+# 強力 CSS：區分電腦與手機排版
 st.markdown("""
     <style>
-    .block-container { padding: 1rem !important; }
+    /* 1. 電腦版基礎設定 */
+    .block-container { padding: 1rem 2rem !important; }
     
-    /* 答題區外框 */
+    /* 2. 手機版專屬修正 (螢幕寬度小於 768px 時觸發) */
+    @media (max-width: 768px) {
+        .block-container { padding: 0.5rem 0.5rem !important; }
+        .stMarkdown h3, .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 5px !important; }
+        .res-box { padding: 8px !important; min-height: 50px !important; font-size: 18px !important; }
+        /* 強制功能鍵在手機也要橫排 */
+        div[data-testid="stHorizontalBlock"] { flex-direction: row !important; display: flex !important; gap: 2px !important; }
+    }
+
+    /* 答題區 */
     .res-box {
         font-size: 20px; color: #1e40af; background-color: #f0f9ff; 
         padding: 15px; border-radius: 10px; border: 1px solid #bae6fd; 
-        min-height: 60px; margin-bottom: 15px; line-height: 1.8;
+        min-height: 60px; margin-bottom: 10px; line-height: 1.8;
         display: flex; flex-wrap: wrap; align-items: center;
     }
-    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 5px; min-width: 30px; text-align: center; }
-    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 5px; padding: 0 2px; font-weight: bold; }
-    .punc-fixed { color: #64748b; font-weight: bold; font-size: 24px; padding: 0 4px; }
+    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 4px; min-width: 25px; text-align: center; }
+    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
+    .punc-fixed { color: #64748b; font-weight: bold; font-size: 22px; padding: 0 3px; }
 
-    /* 功能鍵橫排 (🔄等) */
-    [data-testid="stHorizontalBlock"] { flex-direction: row !important; display: flex !important; gap: 8px !important; }
-    [data-testid="column"] { flex: 1 1 0% !important; min-width: 0px !important; }
-
-    /* 【關鍵】單字按鈕流動區塊：只針對這個區域進行 CSS 覆寫 */
+    /* 按鈕流動區塊 */
     .word-pool-container div.stButton {
         display: inline-block !important;
         width: auto !important;
-        margin-right: 5px !important;
-        margin-bottom: 5px !important;
+        margin-right: 4px !important;
+        margin-bottom: 4px !important;
     }
-    
-    .word-pool-container div.stButton > button {
-        width: auto !important;
-        padding: 0 15px !important;
-        height: 2.6em !important;
-        font-size: 16px !important;
-    }
+    div[data-testid="column"] { flex: 1 1 0% !important; min-width: 0px !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Base64 音訊 ---
+# --- Base64 語音 ---
 def get_audio_b64(text):
     try:
         url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={urllib.parse.quote(text)}"
@@ -68,7 +68,7 @@ def play_audio(text, auto=False):
     b64 = get_audio_b64(text)
     if b64:
         autoplay = "autoplay" if auto else ""
-        st.markdown(f'<audio controls {autoplay} style="width:100%; height:40px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
+        st.markdown(f'<audio controls {autoplay} style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
 
 # --- 資料載入 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
@@ -127,7 +127,6 @@ if df is not None:
     st.session_state.num_q = st.sidebar.slider("3. 練習題數", 1, min(len(filtered_df), 50), st.session_state.num_q)
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # 重置鎖
     current_key = f"{sel_unit}-{sel_ch}-{st.session_state.num_q}"
     if 'sync_key' not in st.session_state or st.session_state.sync_key != current_key:
         st.session_state.sync_key = current_key
@@ -150,11 +149,11 @@ if df is not None:
             st.session_state.shuf_idx = list(range(len(words)))
             random.shuffle(st.session_state.shuf_idx)
 
-        # 1. 顯示題目 (使用標準 st.write，確保電腦版不消失)
+        # 題目區
         st.write(f"### Q{st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.write(f"#### 💡 {q[cols['cn']]}")
 
-        # 2. 答題區
+        # 答題區
         u_ans = list(st.session_state.ans)
         html = '<div class="res-box">'
         for t in all_t:
@@ -165,7 +164,7 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 3. 功能鍵
+        # 功能鍵區
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
             if st.button("🔄"): reset_state(); st.session_state.shuf_idx = []; st.rerun()
@@ -181,10 +180,8 @@ if df is not None:
 
         st.write("---")
         
-        # 4. 單字按鈕區 (使用專屬流動容器)
-        st.write("點選單字按鈕：")
+        # 單字按鈕區
         st.markdown('<div class="word-pool-container">', unsafe_allow_html=True)
-        # 用一個單獨的 container 包住按鈕，透過 CSS 只對這裡面的 div 生效
         for real_idx in st.session_state.shuf_idx:
             if real_idx not in st.session_state.used_history:
                 if st.button(words[real_idx], key=f"btn_{real_idx}"):
@@ -197,7 +194,7 @@ if df is not None:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(words):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("不對喔")
+                else: st.error("順序不對喔")
 
         if st.session_state.is_correct:
             st.success("正解！")
