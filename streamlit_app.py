@@ -6,8 +6,8 @@ import re
 st.set_page_config(page_title="日文重組練習 - 語法強化版", layout="wide")
 
 # 1. 資料讀取 (請修改為您的日文 Google Sheet ID 與 GID)
-SHEET_ID = "1zVUNGboZALvK3val1RSbCQvEESLRSNEulqpNSzsPJ14" # 請替換成你的 ID
-GID = "176577556" # 請替換成你的 GID
+SHEET_ID = "1zVUNGboZALvK3val1RSbCQvEESLRSNEulqpNSzsPJ14"
+GID = "176577556"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 @st.cache_data(ttl=60)
