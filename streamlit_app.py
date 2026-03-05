@@ -4,9 +4,9 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文重組 (標點預顯版)", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 (全標點預顯版)", layout="wide")
 
-# 加大手機版按鈕與文字
+# CSS 優化：增加標點符號的視覺區隔
 st.markdown("""
     <style>
     .stButton>button {
@@ -27,11 +27,12 @@ st.markdown("""
         border: 2px dashed #60a5fa; 
         min-height: 90px; 
         margin-bottom: 15px;
-        line-height: 1.4;
+        line-height: 1.6;
     }
     .punc-hint {
         color: #94a3b8;
         font-weight: bold;
+        padding: 0 2px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -104,10 +105,6 @@ if df is not None:
             q = quiz_list[st.session_state.q_idx]
             ja_raw = str(q[cols['ja']]).strip()
             
-            # 獲取原句末尾的標點符號
-            punc_match = re.search(r'[。！？]+$', ja_raw)
-            punc_hint = punc_match.group() if punc_match else ""
-
             if not st.session_state.shuf:
                 st.session_state.shuf = word_splitter(ja_raw)
                 random.shuffle(st.session_state.shuf)
@@ -115,14 +112,36 @@ if df is not None:
             st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
             st.info(f"💡 {q[cols['cn']]}")
 
-            # --- 拼湊顯示區（包含標點符號提示） ---
-            user_input = "".join(st.session_state.ans)
-            if user_input:
-                display_text = f'{user_input}<span class="punc-hint">{punc_hint}</span>'
-            else:
-                display_text = f'<span style="color:#94a3b8; font-size:18px;">請選取單字... </span><span class="punc-hint">{punc_hint}</span>'
+            # --- 核心邏輯：處理多重標點符號預顯 ---
+            # 將原句拆解為「文字塊」與「標點符號」
+            parts = re.split(r'([、。！？])', ja_raw)
+            # parts 可能像這樣: ['昨日', '、', '公園へ行きました', '。', '']
             
-            st.markdown(f'<div class="res-box">{display_text}</div>', unsafe_allow_html=True)
+            user_input_list = list(st.session_state.ans)
+            display_html = ""
+            
+            # 模擬填入邏輯
+            for p in parts:
+                if p in ['、', '。', '！', '？']:
+                    display_html += f'<span class="punc-hint">{p}</span>'
+                elif p.strip():
+                    # 計算這個文字塊包含多少個拆分後的 token
+                    tokens_in_part = word_splitter(p)
+                    # 從使用者已選的答案中取出對應數量的 token
+                    chunk_to_display = ""
+                    for _ in range(len(tokens_in_part)):
+                        if user_input_list:
+                            chunk_to_display += user_input_list.pop(0)
+                    display_html += chunk_to_display
+
+            # 如果還剩下沒填完的答案（理論上不會），補在後面
+            if user_input_list:
+                display_html += "".join(user_input_list)
+
+            if not st.session_state.ans:
+                display_html = f'<span style="color:#94a3b8; font-size:16px;">請選取單字...</span>' + display_html
+
+            st.markdown(f'<div class="res-box">{display_html}</div>', unsafe_allow_html=True)
 
             # 功能鍵
             c1, c2, c3 = st.columns([1, 1, 1])
@@ -151,7 +170,7 @@ if df is not None:
                     clean_target = re.sub(r'[、。！？\s]', '', ja_raw)
                     if "".join(st.session_state.ans) == clean_target:
                         st.session_state.is_correct = True; st.rerun()
-                    else: st.error("順序不對喔！再試試看")
+                    else: st.error("順序不對喔！")
 
             if st.session_state.is_correct:
                 st.success(f"🎊 正解！")
@@ -161,6 +180,5 @@ if df is not None:
                     st.session_state.q_idx += 1; reset_state(); st.rerun()
         else:
             st.header("🎊 練習完成！")
-            st.balloons()
             if st.button("🔄 重新開始", type="primary", use_container_width=True): 
                 st.session_state.q_idx = 0; reset_state(); st.rerun()
