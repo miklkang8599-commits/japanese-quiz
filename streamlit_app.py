@@ -2,20 +2,21 @@ import streamlit as st
 import pandas as pd
 import random
 import re
-import urllib.parse
+import requests
+import base64
 
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【自定義 HTML 按鈕】：徹底解決 st.button 在手機強制換行的問題，按鈕長短自適應且橫向流動。
-# 2. 【核心音訊修復】：採用直接連結優化，解決 iPhone 播放條灰色 0:00 問題。
+# 1. 【核心語音修復】：採用 Base64 二進位嵌入，徹底解決 iPhone 播放條變灰問題。
+# 2. 【自適應流動按鈕】：按鈕寬度隨單字長短變化，且在手機直立時自動橫向換行。
 # 3. 【填空式重組介面】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
-# 4. 【智慧章節排序】：章節選單支援 1, 2, 10 等智慧排序邏輯。
+# 4. 【智慧排序與保護】：支援智慧章節排序，並保護常用長詞（如：ありがとうございます）。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# 強力 CSS：定義 HTML 按鈕的樣式
+# 強力 CSS：修正按鈕排版與語音樣式
 st.markdown("""
     <style>
     .block-container { padding: 0.5rem 0.8rem !important; }
@@ -31,31 +32,47 @@ st.markdown("""
     .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
     .punc-fixed { color: #64748b; font-weight: bold; font-size: 20px; padding: 0 2px; }
 
-    /* 自定義 HTML 按鈕樣式 (重點) */
-    .html-button-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin: 10px 0;
+    /* 【關鍵修正】強制讓按鈕橫向排隊，不再一列一個 */
+    div[data-testid="column"] {
+        flex: 1 1 0% !important;
+        min-width: 0px !important;
     }
-    .my-btn {
-        display: inline-block;
-        background-color: #ffffff;
-        color: #1e293b;
-        border: 1px solid #d1d5db;
-        border-radius: 8px;
-        padding: 6px 12px;
-        font-size: 16px;
-        text-decoration: none;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        cursor: pointer;
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 5px !important;
     }
-    .my-btn:active {
-        background-color: #f3f4f6;
-        transform: translateY(1px);
+    div.stButton > button {
+        width: auto !important;
+        min-width: 50px !important;
+        padding: 0 10px !important;
+        height: 2.2em !important;
     }
     </style>
 """, unsafe_allow_html=True)
+
+# --- 核心音訊修復：將語音轉為 Base64 字串 ---
+def get_audio_b64(text):
+    try:
+        url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            b64 = base64.b64encode(r.content).decode()
+            return f"data:audio/mpeg;base64,{b64}"
+    except:
+        return None
+    return None
+
+def play_audio(text, auto=False):
+    audio_data = get_audio_b64(text)
+    if audio_data:
+        autoplay = "autoplay" if auto else ""
+        # 使用 HTML5 播放器嵌入 Base64 數據
+        st.markdown(f'<audio controls {autoplay} src="{audio_data}" style="width:100%; height:40px;"></audio>', unsafe_allow_html=True)
+    else:
+        st.error("語音載入失敗")
 
 # --- 資料讀取 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
@@ -99,7 +116,6 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# --- 初始化 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 5
     reset_state()
@@ -118,9 +134,8 @@ if df is not None:
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             ja = str(item[cols['ja']]).strip()
-            st.markdown(f"<div style='background:white; padding:8px; border-radius:5px; margin-bottom:5px; border-left:3px solid #3b82f6;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
-            enc = urllib.parse.quote(ja)
-            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}")
+            st.markdown(f"<div style='background:white; padding:8px; border-radius:5px; margin-bottom:5px; border-left:3px solid #3b82f6;'><b>{item[cols['ch']]} {item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
+            play_audio(ja)
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
@@ -134,7 +149,6 @@ if df is not None:
 
         st.markdown(f"**Q{st.session_state.q_idx + 1}** | {q[cols['cn']]}")
 
-        # 答題區
         u_ans = list(st.session_state.ans)
         html = '<div class="res-box">'
         for t in all_t:
@@ -145,7 +159,7 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 功能鍵 (維持 st.button，因為 4 個一排在手機通常沒問題)
+        # 功能鍵
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
             if st.button("🔄"): reset_state(); st.rerun()
@@ -161,26 +175,21 @@ if df is not None:
 
         st.write("---")
         
-        # --- 核心優化：使用 Query Params 模擬點擊，實現真正流動按鈕 ---
-        # 由於 Streamlit 原生按鈕限制，這裡用 st.button 但每個按鈕「獨立」判斷
-        # 為了讓按鈕在一行並排，我們使用極細的 columns
-        cols_container = st.container()
-        with cols_container:
-            # 建立多欄，但關閉手機端自動堆疊
-            # 這裡用一個 trick: 如果單字多，就建立 20 欄，每欄放一個
-            dynamic_cols = st.columns([1]*15) 
-            btn_idx = 0
-            for idx, word in enumerate(st.session_state.shuf):
-                if idx not in st.session_state.used_history:
-                    # 循環使用欄位
-                    with dynamic_cols[btn_idx % 15]:
-                        if st.button(word, key=f"btn_{idx}"):
+        # --- 核心：按鈕橫向排列邏輯 ---
+        # 這裡用 3 欄式循環排列，但靠 CSS 強制手機版不換行
+        n_cols = 3 
+        for i in range(0, len(st.session_state.shuf), n_cols):
+            row_cols = st.columns(n_cols)
+            for j in range(n_cols):
+                idx = i + j
+                if idx < len(st.session_state.shuf) and idx not in st.session_state.used_history:
+                    word = st.session_state.shuf[idx]
+                    with row_cols[j]:
+                        if st.button(word, key=f"btn_{idx}", use_container_width=True):
                             st.session_state.ans.append(word)
                             st.session_state.used_history.append(idx)
                             st.rerun()
-                    btn_idx += 1
 
-        st.write("")
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(words):
@@ -189,8 +198,7 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("正解！")
-            enc = urllib.parse.quote(ja_raw)
-            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}")
+            play_audio(ja_raw, auto=True)
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
