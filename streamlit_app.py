@@ -4,7 +4,7 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文全單字重組 (智慧排序版)", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文全單字重組 (功能優化版)", layout="wide")
 
 # 手機版 UI 優化
 st.markdown("""
@@ -38,10 +38,6 @@ def load_data():
     except: return None, None
 
 def natural_sort_key(s):
-    """
-    智慧排序輔助函數：將字串中的數字部分轉換為整數進行比較
-    例如：'2' 會排在 '10' 之前，'01-A' 會排在 '02-A' 之前
-    """
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split('([0-9]+)', s)]
 
@@ -72,9 +68,12 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
+# --- 初始化狀態 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
-    st.session_state.num_q = 10
+if 'num_q' not in st.session_state:
+    st.session_state.num_q = 5  # 預設題數設為 5
+if 'ans' not in st.session_state:
     reset_state()
 
 df, cols = load_data()
@@ -83,41 +82,62 @@ if df is not None:
     # --- 側邊欄 ---
     st.sidebar.header("⚙️ 練習設定")
     
-    # 1. 單元排序
+    # 1. 選擇單元
     u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("選擇單元", u_list)
+    sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
     
-    # 2. 章節智慧排序 (關鍵修正！)
+    # 2. 選擇章節 (智慧排序)
     c_list_raw = u_df[cols['ch']].unique().tolist()
     c_list = sorted(c_list_raw, key=natural_sort_key)
-    sel_start_ch = st.sidebar.selectbox("起始章節", c_list)
+    sel_start_ch = st.sidebar.selectbox("2. 起始章節", c_list)
     
-    # 3. 過濾範圍 (同樣使用智慧排序邏輯來過濾 >= 起始章節的項目)
-    # 這裡找出選擇章節在排序後清單中的位置，取其後的章節
+    # 過濾範圍
     start_idx = c_list.index(sel_start_ch)
     valid_chapters = c_list[start_idx:]
     filtered_df = u_df[u_df[cols['ch']].isin(valid_chapters)]
-    
-    max_q = len(filtered_df)
+    max_q_available = len(filtered_df)
 
-    st.sidebar.write(f"練習題數： **{st.session_state.num_q}**")
+    # 確保題數不會超過最大可用題數
+    if st.session_state.num_q > max_q_available:
+        st.session_state.num_q = max_q_available
+
+    # 3. 練習題數控制
+    st.sidebar.write(f"3. 設定練習題數 (最大: {max_q_available})")
+    
+    # 數字拉桿 (Slider)
+    st.session_state.num_q = st.sidebar.slider(
+        "調整題數", 
+        min_value=1, 
+        max_value=max_q_available, 
+        value=st.session_state.num_q,
+        step=1
+    )
+    
+    # 微調按鈕
     c_m, c_p = st.sidebar.columns(2)
     with c_m:
         if st.button("➖ 少一題"):
-            if st.session_state.num_q > 1: st.session_state.num_q -= 1; st.rerun()
+            if st.session_state.num_q > 1: 
+                st.session_state.num_q -= 1
+                st.rerun()
     with c_p:
         if st.button("➕ 多一題"):
-            if st.session_state.num_q < max_q: st.session_state.num_q += 1; st.rerun()
+            if st.session_state.num_q < max_q_available: 
+                st.session_state.num_q += 1
+                st.rerun()
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
+    # 切換條件重置
     ckey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
     if 'lkey' not in st.session_state or st.session_state.lkey != ckey:
         st.session_state.lkey = ckey
-        st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.session_state.q_idx = 0
+        reset_state()
+        st.rerun()
 
-    # --- 主畫面 ---
+    # --- 主畫面測驗區 ---
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
