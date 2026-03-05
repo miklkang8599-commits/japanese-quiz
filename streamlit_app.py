@@ -9,9 +9,9 @@ import urllib.parse
 # ==========================================
 # 1. 【填空式重組介面】：答題區預先顯示標點符號，其餘顯示為待填空格「口」。
 # 2. 【同步對齊技術】：確保「口」空格數量與下方「按鈕」數量絕對一致。
-# 3. 【直讀式預習模式】：預習內容全展開顯示，無需手動摺疊，並強化語音播放。
-# 4. 【標點免輸入】：標點符號固定在正確位置，只需專注單字順序。
-# 5. 【智慧分詞與保護】：保護「ありがとうございます」等長詞，並精準切分助詞。
+# 3. 【直讀式預習模式】：預習內容全展開顯示，每題配備獨立語音播放器。
+# 4. 【語音相容性修復】：針對 iPhone/Safari 優化 TTS 載入邏輯。
+# 5. 【長詞保護機制】：保護「ありがとうございます」等長詞，並精準切分助詞。
 # 6. 【雙重題數控制】：Slider 拉桿與 +/- 按鈕連動，預設為 5 題。
 # ==========================================
 
@@ -31,7 +31,7 @@ st.markdown("""
     .slot-filled { color: #1e40af; border-bottom: 2px solid #60a5fa; margin: 0 8px; padding: 0 4px; }
     .punc-fixed { color: #1e3a8a; font-weight: bold; font-size: 32px; padding: 0 5px; }
     [data-testid="stSidebar"] .stButton>button { height: 2.5em; font-size: 16px !important; }
-    .preview-card { background: #f8fafc; padding: 15px; border-radius: 10px; border-left: 5px solid #3b82f6; margin-bottom: 15px; }
+    .preview-card { background: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
 """, unsafe_allow_html=True)
 
@@ -74,13 +74,18 @@ def unified_parser(text):
             tokens.append(p)
     return tokens
 
-def play_audio(text):
-    """使用 HTML 嵌入方式播放語音以提高相容性"""
+def st_play_audio(text):
+    """針對行動端優化的語音組件"""
     encoded_text = urllib.parse.quote(text)
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={encoded_text}"
+    # 使用 HTML5 原生播放器並提供自動播放嘗試
     st.components.v1.html(f"""
-        <audio autoplay name="media"><source src="{tts_url}" type="audio/mpeg"></audio>
-    """, height=0)
+        <div style="display:flex; align-items:center; gap:10px; font-family:sans-serif;">
+            <audio controls autoplay name="media" style="width:100%; height:40px;">
+                <source src="{tts_url}" type="audio/mpeg">
+            </audio>
+        </div>
+    """, height=50)
 
 def reset_state():
     st.session_state.ans = []
@@ -91,9 +96,7 @@ def reset_state():
 # --- 初始化狀態 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
-if 'num_q' not in st.session_state:
     st.session_state.num_q = 5
-if 'ans' not in st.session_state:
     reset_state()
 
 df, cols = load_data()
@@ -129,16 +132,17 @@ if df is not None:
     # --- 主畫面 ---
     if st.sidebar.checkbox("📖 預習模式"):
         st.header("📖 課文預習 (全展開)")
-        for i, item in enumerate(quiz_list):
+        for item in quiz_list:
             ja_text = str(item[cols['ja']]).strip()
             st.markdown(f"""
                 <div class="preview-card">
-                    <div style='font-size:14px; color:#64748b;'>章節：{item[cols['ch']]}</div>
-                    <div style='font-size:18px; color:#1e293b; margin: 5px 0;'>{item[cols['cn']]}</div>
-                    <div style='font-size:22px; color:#2563eb; font-weight:bold;'>{ja_text}</div>
+                    <div style='font-size:12px; color:#94a3b8;'>章節：{item[cols['ch']]}</div>
+                    <div style='font-size:16px; color:#475569; margin-bottom:4px;'>{item[cols['cn']]}</div>
+                    <div style='font-size:20px; color:#1d4ed8; font-weight:bold;'>{ja_text}</div>
                 </div>
             """, unsafe_allow_html=True)
-            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={urllib.parse.quote(ja_text)}")
+            # 預習模式每題配置一個語音條
+            st_play_audio(ja_text)
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
@@ -196,7 +200,7 @@ if df is not None:
         if st.session_state.is_correct:
             st.success("🎊 正解！")
             st.markdown(f"### {ja_raw}")
-            play_audio(ja_raw) # 答對自動播放
+            st_play_audio(ja_raw) # 答對自動播放
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
