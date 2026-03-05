@@ -1,11 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v6.8 佈局優化版】
+【技術演進與邏輯追蹤表 - v7.0 視覺美化最終版】
 ----------------------------------------------------------------
-1. 佈局調整：依照要求，將「系統操作」功能鍵移回單字池下方。
-2. 標示清晰：維持「退回、重填、上題、下題」全文字標示。
-3. 螢幕适配：壓縮所有垂直 Margin，確保檢查結果在手機端能正常顯現。
-4. 側邊欄替代：持續使用頂部 Expander 確保設定功能不遺失。
+1. 視覺翻新：
+   - 捨棄所有靠左對齊，實施「全域置中佈局」。
+   - 按鈕池透過 CSS Flexbox 實現對稱併排，模擬 Duolingo APP 質感。
+2. 空間平衡：
+   - 答案格位與按鈕間距精確調整，解決畫面偏向一邊的問題。
+3. 實體按鈕回歸：
+   - 為了確保點擊反應與側邊欄不失蹤，回歸原生按鈕但套用強化 CSS 樣式。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -17,44 +20,63 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與核心壓縮 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.8", layout="wide")
+# --- 1. 頁面配置與美學 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v7.0", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. 答案區：保持扁平 */
+    /* 全域字體與背景 */
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+    html, body, [class*="css"]  { font-family: 'Noto Sans JP', sans-serif; }
+    
+    .block-container { padding: 1.5rem 1rem !important; max-width: 500px !important; margin: 0 auto !important; }
+    [data-testid="stHeader"] { display: none; }
+
+    /* 答案區：置中且帶有美感陰影 */
     .res-box { 
-        display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 10px; 
-        border-radius: 12px; border: 1.5px solid #e2e8f0; 
-        min-height: 42px; align-items: center; margin-bottom: 5px;
+        display: flex; flex-wrap: wrap; gap: 6px; 
+        background-color: #ffffff; padding: 15px; 
+        border-radius: 15px; border: 2px solid #e5e7eb; 
+        min-height: 55px; align-items: center; justify-content: center;
+        box-shadow: 0 4px 0 #e5e7eb; margin-bottom: 20px;
     }
     .word-slot { 
-        min-width: 28px; height: 24px; border-bottom: 2px solid #3b82f6; 
+        min-width: 35px; height: 30px; border-bottom: 2px solid #afafaf; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 15px; color: #2563eb; font-weight: bold; margin: 0 1px;
+        font-size: 18px; color: #1cb0f6; font-weight: bold; margin: 0 3px;
     }
 
-    /* 2. 核心：強制單字池與功能鍵在手機端橫向併排 */
+    /* 單字池：強制對稱併排 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
-        flex-direction: row !important; gap: 4px !important;
+        flex-direction: row !important; gap: 8px !important;
+        justify-content: center !important; /* 置中關鍵 */
     }
 
-    /* 3. 按鈕視覺：極致扁平化 */
+    /* 按鈕樣式：Duolingo 3D 質感 */
     div.stButton > button {
-        width: auto !important; min-width: 35px !important;
-        padding: 4px 10px !important; border-radius: 8px !important;
-        font-size: 14px !important; font-weight: bold !important;
-        border-bottom: 2.5px solid #e5e7eb !important;
-        margin-bottom: 2px !important;
+        width: auto !important; min-width: 50px !important;
+        padding: 8px 16px !important; border-radius: 12px !important;
+        font-size: 16px !important; font-weight: bold !important;
+        background-color: white !important; color: #4b4b4b !important;
+        border: 2px solid #e5e7eb !important;
+        border-bottom: 4px solid #e5e7eb !important;
+        transition: all 0.1s;
+    }
+    div.stButton > button:active {
+        border-bottom: 2px solid #e5e7eb !important;
+        transform: translateY(2px);
     }
     
-    /* 4. 微調標籤文字 */
-    .section-label { font-size: 12px; color: #94a3b8; margin: 5px 0 2px 0; }
+    /* 系統操作按鈕：更精緻 */
+    .control-btns div.stButton > button {
+        padding: 4px 10px !important; font-size: 14px !important;
+        color: #afafaf !important; border-bottom: 2px solid #e5e7eb !important;
+    }
 
-    .block-container { padding: 0.5rem 0.4rem !important; }
-    [data-testid="stHeader"] { display: none; }
+    /* 標題與說明 */
+    .stCaption { text-align: center; color: #afafaf; font-weight: bold; }
+    .stInfo { border-radius: 12px; background-color: #ddf4ff; color: #1899d6; border: none; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -69,7 +91,7 @@ def load_data():
     except: return None, None
 
 def get_sentence_structure(text):
-    pts = ['は','が','を','に','へ','推','與','進','度','と','も','で','の','から','まで']
+    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
     raw = re.split(r'([、。！？])', text.strip())
     struct = []
     for p in raw:
@@ -91,10 +113,7 @@ def get_audio_html(text):
     return ""
 
 def reset_state():
-    st.session_state.ans = []
-    st.session_state.used_history = []
-    st.session_state.shuf = []
-    st.session_state.is_correct = False
+    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
 # --- 3. 初始化 ---
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
@@ -104,14 +123,14 @@ if 'ans' not in st.session_state: reset_state()
 df, cols = load_data()
 
 if df is not None:
-    # --- 頂部設定選單 ---
+    # 側邊欄改為清爽版
     with st.expander("⚙️ 練習設定", expanded=False):
         unit_list = sorted(df[cols['unit']].astype(str).unique())
-        sel_unit = st.selectbox("單元選擇", unit_list)
+        sel_unit = st.selectbox("選擇單元", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
         sel_start_ch = st.selectbox("起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
-        preview_mode = st.checkbox("📖 開啟預習模式")
+        preview_mode = st.checkbox("📖 預習模式")
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
@@ -132,21 +151,21 @@ if df is not None:
             random.seed(st.session_state.q_idx)
             random.shuffle(st.session_state.shuf)
 
-        st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
+        st.caption(f"第 {st.session_state.q_idx + 1} 題 / 共 {len(quiz_list)} 題")
+        st.info(f"{cn_text}")
 
-        # A. 答案區
+        # A. 答案展示區
         curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
-            if s['type'] == 'punc': ans_html += f'<span style="color:#94a3b8;">{s["content"]}</span>'
+            if s['type'] == 'punc': ans_html += f'<span style="color:#afafaf;">{s["content"]}</span>'
             else:
                 val = curr_ans_copy.pop(0) if curr_ans_copy else ""
                 ans_html += f'<div class="word-slot">{val}</div>'
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字選擇池 (在上方)
-        st.markdown('<p class="section-label">▼ 選擇單字：</p>', unsafe_allow_html=True)
+        # B. 單字選擇池 (併排對稱)
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
@@ -154,28 +173,30 @@ if df is not None:
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 系統操作鍵 (回到單字池下方)
-        st.markdown('<p class="section-label">▼ 系統操作：</p>', unsafe_allow_html=True)
+        # C. 系統操作 (精緻化)
+        st.write(" ")
+        st.markdown('<div class="control-btns">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
-        if nav_cols[0].button("⬅退回"):
+        if nav_cols[0].button("⬅ 退回"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        if nav_cols[1].button("🔄重填"): reset_state(); st.rerun()
-        if nav_cols[2].button("⏮上題"): 
+        if nav_cols[1].button("🔄 重填"): reset_state(); st.rerun()
+        if nav_cols[2].button("⏮ 上一題"): 
             st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
-        if nav_cols[3].button("⏭下題"): 
+        if nav_cols[3].button("⏭ 下一題"): 
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # D. 檢查答案與結果顯示 (置底)
-        st.write("---")
+        # D. 檢查與結果 (底部置中)
+        st.divider()
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: st.error("不對喔！再想一想吧 💡")
 
         if st.session_state.is_correct:
-            st.success("正解！")
+            st.success("正解！太厲害了 🎉")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
-            if st.button("繼續下一題 ➡️", type="primary", use_container_width=True): 
+            if st.button("繼續 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
