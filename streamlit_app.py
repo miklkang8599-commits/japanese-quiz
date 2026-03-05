@@ -4,33 +4,46 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文重組 (題數加減版)", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文填充重組練習", layout="wide")
 
-# CSS 優化
+# CSS 優化：定義空格與按鈕樣式
 st.markdown("""
     <style>
     .stButton>button {
         width: 100%;
-        border-radius: 10px;
-        height: 3.2em;
-        font-size: 18px !important;
-        margin-bottom: 8px;
+        border-radius: 8px;
+        height: 3em;
+        font-size: 16px !important;
+        margin-bottom: 5px;
     }
     .res-box {
-        font-size: 26px; 
-        color: #1e40af; 
-        background-color: #eff6ff; 
-        padding: 18px; 
-        border-radius: 12px; 
-        border: 2px dashed #60a5fa; 
-        min-height: 90px; 
-        margin-bottom: 15px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        background-color: #f8fafc;
+        padding: 20px;
+        border-radius: 15px;
+        border: 2px solid #e2e8f0;
+        min-height: 100px;
+        margin-bottom: 20px;
+        align-items: center;
     }
-    .punc-hint { color: #94a3b8; font-weight: bold; padding: 0 2px; }
-    /* 讓側邊欄按鈕稍微縮小一點，適合點擊 */
-    [data-testid="stSidebar"] .stButton>button {
-        height: 2.5em;
-        font-size: 16px !important;
+    .word-slot {
+        min-width: 60px;
+        height: 40px;
+        border-bottom: 3px solid #cbd5e1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: #1e40af;
+        font-weight: bold;
+    }
+    .punc-display {
+        font-size: 24px;
+        color: #64748b;
+        font-weight: bold;
+        margin: 0 2px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -53,6 +66,7 @@ def load_data():
     except: return None, None
 
 def word_splitter(text):
+    """拆解單字與助詞，過濾標點符號"""
     clean_text = re.sub(r'[、。！？\s]', '', text)
     particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
     pattern = f"({'|'.join(particles)})"
@@ -65,66 +79,49 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# 初始化 Session State
+# 初始化
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
-    st.session_state.num_q = 10 # 預設練習題數
+    st.session_state.num_q = 10
     reset_state()
 
 df, cols = load_data()
 
 if df is not None:
-    # --- 側邊欄設定 ---
+    # 側邊欄設定
     st.sidebar.header("⚙️ 練習設定")
-    
     unit_list = sorted(df[cols['unit']].unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", unit_list)
     unit_df = df[df[cols['unit']] == sel_unit]
-    
     ch_list = sorted(unit_df[cols['ch']].unique())
     sel_start_ch = st.sidebar.selectbox("2. 起始章節", ch_list)
     
     filtered_df = unit_df[unit_df[cols['ch']] >= sel_start_ch]
     max_q = len(filtered_df)
 
-    # 3. 練習題數 (+/- 功能)
     st.sidebar.write(f"3. 練習題數： **{st.session_state.num_q}**")
     c_minus, c_plus = st.sidebar.columns(2)
     with c_minus:
         if st.button("➖ 少一題"):
-            if st.session_state.num_q > 1:
-                st.session_state.num_q -= 1
-                st.rerun()
+            if st.session_state.num_q > 1: st.session_state.num_q -= 1; st.rerun()
     with c_plus:
         if st.button("➕ 多一題"):
-            if st.session_state.num_q < max_q:
-                st.session_state.num_q += 1
-                st.rerun()
-
-    # 安全檢查：確保題數不超過最大範圍
-    if st.session_state.num_q > max_q: st.session_state.num_q = max_q
+            if st.session_state.num_q < max_q: st.session_state.num_q += 1; st.rerun()
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # 切換條件時重置
+    # 切換條件重置
     cur_key = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
     if 'last_key' not in st.session_state or st.session_state.last_key != cur_key:
         st.session_state.last_key = cur_key
         st.session_state.q_idx = 0
-        reset_state()
-        st.rerun()
+        reset_state(); st.rerun()
 
-    # 主畫面區
-    if st.sidebar.checkbox("📖 預習模式"):
-        for item in quiz_list:
-            with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
-                st.write(f"### {item[cols['ja']]}")
-                st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={item[cols['ja']]}")
-    
-    elif st.session_state.q_idx < len(quiz_list):
+    if st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
         ja_raw = str(q[cols['ja']]).strip()
         
+        # 取得不含標點的所有單字
         if not st.session_state.shuf:
             st.session_state.shuf = word_splitter(ja_raw)
             random.shuffle(st.session_state.shuf)
@@ -132,37 +129,49 @@ if df is not None:
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # 標點符號預顯邏輯
-        parts = re.split(r'([、。！？])', ja_raw)
-        user_input_list = list(st.session_state.ans)
-        display_html = ""
-        for p in parts:
-            if p in ['、', '。', '！', '？']:
-                display_html += f'<span class="punc-hint">{p}</span>'
-            elif p.strip():
-                tokens_in_part = word_splitter(p)
-                for _ in range(len(tokens_in_part)):
-                    if user_input_list: display_html += user_input_list.pop(0)
-        
-        if not st.session_state.ans:
-            display_html = f'<span style="color:#94a3b8; font-size:16px;">請選取單字...</span>' + display_html
-        
-        st.markdown(f'<div class="res-box">{display_html}</div>', unsafe_allow_html=True)
+        # --- 核心顯示區：填充格位設計 ---
+        # 取得原句結構（含標點）
+        struct_parts = re.split(r'([、。！？])', ja_raw)
+        total_tokens_needed = len(word_splitter(ja_raw))
+        current_ans_list = list(st.session_state.ans)
 
-        # 功能鍵
-        c1, c2, c3 = st.columns([1, 1, 1])
+        # 渲染填充框
+        with st.container():
+            html_content = '<div class="res-box">'
+            for part in struct_parts:
+                if part in ['、', '。', '！', '？']:
+                    html_content += f'<span class="punc-display">{part}</span>'
+                elif part.strip():
+                    part_tokens = word_splitter(part)
+                    for _ in range(len(part_tokens)):
+                        val = current_ans_list.pop(0) if current_ans_list else ""
+                        html_content += f'<div class="word-slot">{val}</div>'
+            html_content += '</div>'
+            st.markdown(html_content, unsafe_allow_html=True)
+
+        # 功能鍵區
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
         with c1:
-            if st.button("🔄重填"): reset_state(); st.rerun()
+            if st.button("⬅️ 上一題"):
+                if st.session_state.q_idx > 0:
+                    st.session_state.q_idx -= 1
+                    reset_state(); st.rerun()
         with c2:
-            if st.button("⬅️退回"):
+            if st.button("➡️ 下一題"): # 這是跳過功能
+                if st.session_state.q_idx < len(quiz_list) - 1:
+                    st.session_state.q_idx += 1
+                    reset_state(); st.rerun()
+        with c3:
+            if st.button("🔄 重填"): reset_state(); st.rerun()
+        with c4:
+            if st.button("⬅️ 退回"):
                 if st.session_state.used_history:
                     st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        with c3:
-            if st.button("⏭️跳過"):
-                st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
-        btn_cols = st.columns(2) 
+        # 備選單字按鈕 (iPhone 2 欄優化)
+        st.write("### 選擇單字填入：")
+        btn_cols = st.columns(2)
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.used_history:
                 with btn_cols[i % 2]:
@@ -171,7 +180,8 @@ if df is not None:
                         st.session_state.used_history.append(i)
                         st.rerun()
 
-        if st.session_state.ans and not st.session_state.is_correct:
+        # 檢查答案
+        if len(st.session_state.ans) == total_tokens_needed and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 clean_target = re.sub(r'[、。！？\s]', '', ja_raw)
                 if "".join(st.session_state.ans) == clean_target:
@@ -182,9 +192,10 @@ if df is not None:
             st.success(f"🎊 正解！")
             st.markdown(f"### {ja_raw}")
             st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
-            if st.button("下一題 ➡️", type="primary", use_container_width=True):
-                st.session_state.q_idx += 1; reset_state(); st.rerun()
+            if st.button("進入下一題 ➡️", type="primary", use_container_width=True):
+                st.session_state.q_idx += 1
+                reset_state(); st.rerun()
     else:
         st.header("🎊 練習完成！")
-        if st.button("🔄 重新開始", type="primary", use_container_width=True): 
+        if st.button("🔄 重新開始", type="primary"): 
             st.session_state.q_idx = 0; reset_state(); st.rerun()
