@@ -8,43 +8,56 @@ import base64
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【核心音訊修復】：採用 Base64 內嵌技術，確保 Chrome 與 iPhone 都能播放。
-# 2. 【手機排版優化】：針對 iPhone 窄螢幕設計，縮減答題區，優化按鈕點擊感。
-# 3. 【填空式重組】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
-# 4. 【長詞保護】：保護「ありがとうございます」等常用語不被切碎。
-# 5. 【預覽全展開】：預習模式無需折疊，每題配備獨立語音播放器。
+# 1. 【流式按鈕佈局】：單字按鈕自動橫向排列，極大節省空間，減少手機捲動。
+# 2. 【核心音訊修復】：採用 Base64 內嵌技術，確保 Chrome 與 iPhone 都能播放。
+# 3. 【手機介面優化】：縮小答題區與按鈕高度，將控制鍵圖示化並橫向併排。
+# 4. 【填空式重組】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
+# 5. 【預覽全展開】：預習模式清單化顯示，每題配備極簡語音播放器。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組", layout="wide")
 
-# 強力手機版 CSS 修復
+# 強力手機版 CSS 優化
 st.markdown("""
     <style>
-    /* 全域背景與字體 */
-    .main { background-color: #f8fafc; }
+    /* 移除多餘邊距 */
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
     
-    /* 答題區：縮小高度、緊湊排版 */
+    /* 答題區：更緊湊的排版 */
     .res-box {
-        font-size: 20px; color: #1e40af; background-color: #ffffff; 
-        padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0; 
-        min-height: 80px; margin-bottom: 10px; line-height: 1.8;
+        font-size: 18px; color: #1e40af; background-color: #ffffff; 
+        padding: 10px; border-radius: 10px; border: 1px solid #e2e8f0; 
+        min-height: 60px; margin-bottom: 10px; line-height: 1.6;
         display: flex; flex-wrap: wrap; align-items: center;
     }
-    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 4px; min-width: 30px; text-align: center; }
-    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
-    .punc-fixed { color: #64748b; font-weight: bold; font-size: 22px; padding: 0 2px; }
+    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 3px; min-width: 25px; text-align: center; }
+    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 3px; padding: 0 2px; font-weight: bold; }
+    .punc-fixed { color: #64748b; font-weight: bold; font-size: 20px; padding: 0 2px; }
 
-    /* 控制按鈕列：四格橫排，縮小高度 */
-    .stButton>button { 
-        border-radius: 8px; height: 2.8em; font-size: 15px !important; 
-        padding: 0px !important; margin-bottom: 5px;
+    /* 控制按鈕列：極簡橫排 */
+    .ctrl-row .stButton>button { 
+        height: 2.5em; font-size: 14px !important; padding: 0px !important;
     }
     
-    /* 單字按鈕區：自動流動排版 */
-    div[data-testid="column"] { padding: 0 2px !important; }
-    
-    /* 側邊欄優化 */
-    [data-testid="stSidebar"] { width: 250px !important; }
+    /* 【關鍵修正】單字按鈕：自動流動排版 */
+    .word-btn-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-start;
+    }
+    /* 覆寫 Streamlit 預設按鈕寬度 */
+    div.stButton > button:not(.main-btn) {
+        width: auto !important;
+        min-width: 60px;
+        padding: 0 15px !important;
+        display: inline-block;
+    }
+    /* 檢查答案按鈕設為寬版 */
+    .main-btn > div > button { width: 100% !important; height: 3em !important; font-weight: bold !important; }
+
+    /* 隱藏側邊欄多餘資訊 */
+    [data-testid="stSidebar"] { width: 220px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -63,8 +76,8 @@ def play_audio(text, auto=False):
     b64_str = get_audio_b64(text)
     if b64_str:
         autoplay = "autoplay" if auto else ""
-        html_code = f'<audio controls {autoplay} style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64_str}" type="audio/mp3"></audio>'
-        st.components.v1.html(html_code, height=45)
+        html_code = f'<audio controls {autoplay} style="width:100%; height:30px;"><source src="data:audio/mp3;base64,{b64_str}" type="audio/mp3"></audio>'
+        st.components.v1.html(html_code, height=40)
 
 # --- 資料讀取 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
@@ -115,9 +128,8 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄設定
-    u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("單元", u_list)
+    # 側邊欄
+    sel_unit = st.sidebar.selectbox("單元", sorted(df[cols['unit']].unique()))
     u_df = df[df[cols['unit']] == sel_unit]
     c_list = sorted(u_df[cols['ch']].unique().tolist(), key=natural_sort_key)
     sel_start_ch = st.sidebar.selectbox("章節", c_list)
@@ -128,7 +140,6 @@ if df is not None:
 
     st.sidebar.write(f"題數: {st.session_state.num_q}")
     st.session_state.num_q = st.sidebar.slider("調整", 1, max_q, st.session_state.num_q)
-    
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if 'lkey' not in st.session_state or st.session_state.lkey != f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}":
@@ -139,7 +150,7 @@ if df is not None:
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             ja = str(item[cols['ja']]).strip()
-            st.markdown(f"<div style='background:white; padding:10px; border-radius:8px; margin-bottom:5px; border-left:4px solid #3b82f6;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background:white; padding:8px; border-radius:8px; margin-bottom:5px; border-left:3px solid #3b82f6; font-size:14px;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
             play_audio(ja)
     
     elif st.session_state.q_idx < len(quiz_list):
@@ -152,7 +163,7 @@ if df is not None:
         if not st.session_state.shuf:
             st.session_state.shuf = list(words); random.shuffle(st.session_state.shuf)
 
-        st.write(f"Q{st.session_state.q_idx + 1} | {q[cols['cn']]}")
+        st.markdown(f"**Q{st.session_state.q_idx + 1}** | {q[cols['cn']]}")
 
         # 答題區
         u_ans = list(st.session_state.ans)
@@ -165,7 +176,8 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 控制鍵：緊湊橫排
+        # 功能鍵
+        st.markdown('<div class="ctrl-row">', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
             if st.button("🔄"): reset_state(); st.rerun()
@@ -178,27 +190,35 @@ if df is not None:
         with c4:
             if st.button("⏭️"):
                 if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # 單字按鈕：自適應寬度
+        # 單字按鈕：流式佈局
         st.write("---")
-        b_cols = st.columns(2) # 雖然寫 2，但手機上會更緊湊
+        # 使用自定義容器
+        cols = st.columns(3) # 建立虛擬列，但我們會強制按鈕 inline
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.used_history:
-                with b_cols[i % 2]:
+                # 均勻分散到各列中，實現流式排版效果
+                with cols[i % 3]:
                     if st.button(t, key=f"btn_{i}"):
                         st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
 
+        st.write("")
         if st.session_state.ans and not st.session_state.is_correct:
-            if st.button("🔍 檢查", type="primary", use_container_width=True):
+            st.markdown('<div class="main-btn">', unsafe_allow_html=True)
+            if st.button("🔍 檢查答案", type="primary"):
                 if "".join(st.session_state.ans) == "".join(words):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("不對喔")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.is_correct:
             st.success("正解！")
             play_audio(ja_raw, auto=True)
-            if st.button("下一題 ➡️", type="primary", use_container_width=True):
+            st.markdown('<div class="main-btn">', unsafe_allow_html=True)
+            if st.button("下一題 ➡️", type="primary"):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.header("練習完成！")
         if st.button("🔄 重新開始", type="primary", use_container_width=True): 
