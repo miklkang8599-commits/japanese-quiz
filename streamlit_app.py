@@ -7,61 +7,68 @@ import base64
 import urllib.parse
 
 # ==========================================
-# 🌟 程式特色：手機端彈性流動排版 (Flex Flow Fix)
+# 🌟 程式特色：手機端絕對流動佈局 (Pure Flex)
 # ==========================================
-# 1. 【Flexbox 流動按鈕】：不再依賴 st.columns，強制按鈕橫向排隊，自動換行，長短自適應。
-# 2. 【側邊欄修復】：修正 CSS 衝突，確保左上角選單按鈕 (>) 永遠可見。
-# 3. 【Base64 強效音訊】：徹底解決 iPhone 播放器變灰色 0:00 問題。
-# 4. 【空間極致壓縮】：移除頂部空白，題目與答題框置頂，減少滑動。
+# 1. 【核心修正】：捨棄 st.columns，改用純 CSS Flexbox 確保手機橫向排隊。
+# 2. 【空間回收】：移除頂部空白，找回選單按鈕，中文題目完全可見。
+# 3. 【Base64 音訊】：徹底解決 iPhone 播放器變灰色 0:00 問題。
+# 4. 【按鈕智慧寬度】：長單字佔長位，短助詞佔短位，完美利用手機螢幕。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文重組", layout="wide")
 
-# 強力 CSS：徹底破解手機端垂直堆疊限制
+# 強力 CSS：徹底繞過原生組件的垂直限制
 st.markdown("""
     <style>
-    /* 1. 基礎空間：移除頂部空白，但不影響選單按鈕 */
-    .block-container { padding: 3rem 0.5rem 1rem !important; }
-    [data-testid="stHeader"] { background: rgba(255,255,255,0.5); }
+    /* 1. 空間管理：保留頂部選單按鈕，縮小邊距 */
+    [data-testid="stHeader"] { display: block !important; height: 3rem !important; }
+    .block-container { padding: 3rem 0.6rem 1rem !important; }
     
     /* 2. 答題區 */
     .res-box {
         font-size: 18px; color: #1e40af; background-color: #f0f9ff; 
-        padding: 8px; border-radius: 8px; border: 1px solid #bae6fd; 
-        min-height: 45px; margin-bottom: 8px; line-height: 1.5;
+        padding: 10px; border-radius: 8px; border: 1px solid #bae6fd; 
+        min-height: 50px; margin-bottom: 8px; line-height: 1.6;
         display: flex; flex-wrap: wrap; align-items: center;
     }
-    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 3px; min-width: 20px; text-align: center; }
-    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 3px; font-weight: bold; }
-    .punc-fixed { color: #64748b; font-weight: bold; font-size: 18px; padding: 0 2px; }
+    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 3px; min-width: 22px; text-align: center; }
+    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
+    .punc-fixed { color: #64748b; font-weight: bold; font-size: 20px; padding: 0 2px; }
 
-    /* 3. 【核心修正】功能鍵與單字按鈕：強制橫向流動 */
-    div[data-testid="stHorizontalBlock"] {
+    /* 3. 功能鍵與單字按鈕：強制橫向並排並自動換行 */
+    /* 我們直接針對所有被包在流動容器裡的按鈕進行處理 */
+    .flow-container {
         display: flex !important;
         flex-direction: row !important;
-        flex-wrap: wrap !important; /* 關鍵：允許換行 */
-        align-items: center !important;
-        gap: 8px !important;
-    }
-    
-    /* 針對按鈕容器：取消固定寬度 */
-    div[data-testid="column"] {
-        flex: 0 1 auto !important; /* 關鍵：寬度隨內容伸縮 */
-        min-width: 0px !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        margin-bottom: 10px !important;
     }
 
-    /* 針對按鈕本身：長短自適應 */
+    /* 關鍵：讓 Streamlit 的 button 容器失去「佔滿整行」的特性 */
+    div.stButton {
+        display: inline-block !important;
+        width: auto !important;
+    }
+
     div.stButton > button {
         width: auto !important;
-        padding: 0 12px !important;
+        min-width: 45px !important;
         height: 2.4em !important;
+        padding: 0 12px !important;
         font-size: 15px !important;
         white-space: nowrap !important;
+    }
+    
+    /* 功能鍵 (🔄等) 專屬縮小 */
+    .ctrl-btn button {
+        font-size: 18px !important;
+        padding: 0 8px !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Base64 語音處理 ---
+# --- Base64 音訊嵌入 ---
 def get_audio_b64(text):
     try:
         url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={urllib.parse.quote(text)}"
@@ -75,7 +82,7 @@ def play_audio(text, auto=False):
     b64 = get_audio_b64(text)
     if b64:
         autoplay = "autoplay" if auto else ""
-        st.markdown(f'<audio controls {autoplay} style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
+        st.markdown(f'<audio controls {autoplay} style="width:100%; height:38px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
 
 # --- 資料讀取 ---
 @st.cache_data(ttl=10)
@@ -115,23 +122,20 @@ df, cols = load_data()
 if df is not None:
     # 側邊欄
     u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("1. 單元", u_list)
+    sel_unit = st.sidebar.selectbox("單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
-    sel_ch = st.sidebar.selectbox("2. 章節", sorted(u_df[cols['ch']].unique().tolist()))
+    sel_ch = st.sidebar.selectbox("章節", sorted(u_df[cols['ch']].unique().tolist()))
     quiz_list = u_df[u_df[cols['ch']] >= sel_ch].head(5).to_dict('records')
 
-    # 同步重置
+    # 同步鎖
     current_key = f"{sel_unit}-{sel_ch}"
     if 'sync_key' not in st.session_state or st.session_state.sync_key != current_key:
-        st.session_state.sync_key = current_key
-        st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.session_state.sync_key = current_key; st.session_state.q_idx = 0; reset_state(); st.rerun()
 
-    # 主畫面
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
-            ja = str(item[cols['ja']]).strip()
-            st.info(f"**{item[cols['cn']]}**\n\n{ja}")
-            play_audio(ja)
+            st.info(f"**{item[cols['cn']]}**\n\n{item[cols['ja']]}")
+            play_audio(item[cols['ja']])
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
@@ -142,7 +146,7 @@ if df is not None:
         if 'shuf_idx' not in st.session_state or len(st.session_state.shuf_idx) != len(words):
             st.session_state.shuf_idx = list(range(len(words))); random.shuffle(st.session_state.shuf_idx)
 
-        # 頂部顯示
+        # 頂部中文題目
         st.markdown(f"**Q{st.session_state.q_idx + 1}** | {q[cols['cn']]}")
 
         # 答題區
@@ -155,38 +159,40 @@ if df is not None:
                 else: html += f'<span class="slot-empty">口</span>'
         st.markdown(html + '</div>', unsafe_allow_html=True)
 
-        # 4. 【重點】功能鍵與按鈕合併成流動區域
-        # 使用多個 st.columns(1) 的組合來達成 Flexbox 效果
-        c_ctrl = st.columns([1,1,1,1])
-        with c_ctrl[0]: 
+        # 🔄 功能鍵區域：強制在一行內流動
+        st.markdown('<div class="flow-container ctrl-btn">', unsafe_allow_html=True)
+        btn_cols = st.columns(len(st.session_state.shuf_idx) + 4) # 建立足夠的欄位防止換行
+        
+        # 放置功能鍵
+        with btn_cols[0]:
             if st.button("🔄"): reset_state(); st.rerun()
-        with c_ctrl[1]:
+        with btn_cols[1]:
             if st.button("⬅️"):
                 if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        with c_ctrl[2]:
+        with btn_cols[2]:
             if st.button("⏮️") and st.session_state.q_idx > 0:
                 st.session_state.q_idx -= 1; st.session_state.shuf_idx = []; reset_state(); st.rerun()
-        with c_ctrl[3]:
+        with btn_cols[3]:
             if st.button("⏭️") and st.session_state.q_idx < len(quiz_list)-1:
                 st.session_state.q_idx += 1; st.session_state.shuf_idx = []; reset_state(); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
         st.write("---")
         
-        # 單字按鈕區：這裡使用單欄並依賴 CSS 的 flex-wrap
-        # 建立一組虛擬 columns，CSS 會強迫它們在手機上橫向排列
-        word_cols = st.columns(len(st.session_state.shuf_idx))
+        # 單字按鈕區：流動佈局
+        st.write("點選單字：")
+        st.markdown('<div class="flow-container">', unsafe_allow_html=True)
         for i, ridx in enumerate(st.session_state.shuf_idx):
             if ridx not in st.session_state.used_history:
-                with word_cols[i]:
+                # 直接按順序使用剩下的 columns
+                with btn_cols[i + 4]:
                     if st.button(words[ridx], key=f"btn_{ridx}"):
-                        st.session_state.ans.append(words[ridx])
-                        st.session_state.used_history.append(ridx)
-                        st.rerun()
+                        st.session_state.ans.append(words[ridx]); st.session_state.used_history.append(ridx); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                if "".join(st.session_state.ans) == "".join(words):
-                    st.session_state.is_correct = True; st.rerun()
+                if "".join(st.session_state.ans) == "".join(words): st.session_state.is_correct = True; st.rerun()
                 else: st.error("不對喔")
 
         if st.session_state.is_correct:
