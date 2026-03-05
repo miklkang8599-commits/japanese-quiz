@@ -1,12 +1,27 @@
 """
 ================================================================
-【日文結構練習器 - v3.7 大拇指優化版】
-版本編號：v3.7.20260306
+【技術演進與解決邏輯追蹤表】
+----------------------------------------------------------------
+版本歷史與邏輯變更：
+- v1.0~v3.3 (舊方法)：
+  邏輯：使用 st.columns() + st.button()。
+  失敗原因：Streamlit 框架在螢幕寬度 < 768px 時，會透過底層 JS 強制將 
+  flex-direction 設為 column，導致手機直立時按鈕絕對會「一列一個」。
+  CSS 無論如何設定 !important 都難以完全覆蓋 React 組件的動態渲染。
+
+- v3.4~v3.7 (嘗試繞過)：
+  邏輯：嘗試建立大量窄欄位。
+  失敗原因：依然受限於框架對 st.columns 的定義，無法達成 Duolingo 的流式排版。
+
+- v3.8~v3.9 (最終獨立解法 - 目前版本)：
+  邏輯：完全捨棄 st.columns。
+  1. 渲染：使用 st.markdown() 直接噴出純 HTML <a> 標籤。
+  2. 排版：利用瀏覽器對標準 HTML <flex-wrap> 的原生支援，無視框架限制。
+  3. 通訊：點擊 HTML 連結觸發 URL query_params，由 Python 端攔截參數並執行邏輯。
+  優點：真正實現手機直立併排、緊貼，且單字長短自動適配空間。
+----------------------------------------------------------------
 更新時間：2026-03-06
-設計重點：
-1. 佈局翻轉：按鈕池與功能鍵位置對調，符合手機單手操作習慣。
-2. 極限緊貼：按鈕間距降至 2px，答案空格縮小。
-3. Base64 音訊：徹底解決 iPhone 播放器灰色不可點擊問題。
+設計重點：1.單字池置中 2.格位縮小 3.功能鍵置底 4.預習模式全展開
 ================================================================
 """
 
@@ -17,64 +32,66 @@ import re
 import requests
 import base64
 
-# --- 【重點 1】極限緊湊與位置對調 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v3.7", layout="wide")
+# --- 【重點 1】手機環境極致 CSS (精準鎖定 HTML 元素) ---
+st.set_page_config(page_title="🇯🇵 日文重組 v3.9", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. 核心：強制按鈕緊密併排 (2px 間距) */
-    [data-testid="stHorizontalBlock"] {
-        gap: 2px !important; 
-        display: flex !important;
-        flex-wrap: wrap !important;
-    }
-    [data-testid="column"] {
-        padding: 0px !important;
-        margin: 0px !important;
-        flex: 0 1 auto !important;
-        width: auto !important;
-    }
-
-    /* 2. 移除所有預設內邊距 */
-    .block-container { padding: 0.5rem 0.2rem !important; }
+    /* 移除頂部空白與邊距 */
+    .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 3. 答案區：扁平化與微小化 */
+    /* 答案區：極致扁平化 (格位小一點) */
     .res-box { 
-        display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #f9fafb; padding: 8px; 
-        border-radius: 8px; border: 1.5px solid #e5e7eb; 
-        min-height: 60px; margin-bottom: 5px; align-items: center; 
+        display: flex; flex-wrap: wrap; gap: 6px; 
+        background-color: #f9fafb; padding: 12px; 
+        border-radius: 10px; border: 1.5px solid #e5e7eb; 
+        min-height: 65px; margin-bottom: 8px; align-items: center; 
     }
     .word-slot { 
-        min-width: 35px; height: 30px; border-bottom: 2px solid #cbd5e1; 
+        min-width: 32px; height: 30px; border-bottom: 2px solid #cbd5e1; 
         display: flex; align-items: center; justify-content: center; 
         font-size: 17px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
-    .punc-display { font-size: 18px; color: #94a3b8; font-weight: bold; }
+    .punc-display { font-size: 20px; color: #94a3b8; font-weight: bold; }
 
-    /* 4. 緊湊按鈕樣式 */
-    div.stButton > button {
-        border-radius: 6px !important;
-        border: 1px solid #e5e7eb !important;
-        border-bottom: 3px solid #e5e7eb !important;
-        padding: 4px 8px !important;
-        font-size: 14px !important;
-        font-weight: bold !important;
-        height: auto !important;
-        width: auto !important;
+    /* 重點：自定義 HTML 按鈕 (真正解決緊貼與併排) */
+    .btn-pool {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px; /* 按鈕間隔比做小的按鈕還小 */
+        justify-content: flex-start;
+        padding: 10px 0;
+    }
+    .custom-btn {
+        display: inline-block;
+        background-color: white;
+        border: 1px solid #e5e7eb;
+        border-bottom: 3px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 16px;
+        font-weight: bold;
+        color: #4b4b4b;
+        cursor: pointer;
+        text-decoration: none;
+        transition: transform 0.1s;
+    }
+    .custom-btn:active {
+        transform: translateY(2px);
+        border-bottom-width: 1px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 【重點 2】Base64 音訊技術 ---
+# --- 【重點 2】音訊與結構處理 ---
 def get_audio_html(text):
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
     try:
         response = requests.get(tts_url)
         if response.status_code == 200:
             b64 = base64.b64encode(response.content).decode()
-            return f'<audio controls style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:38px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
@@ -86,8 +103,15 @@ def get_sentence_structure(text):
         if part in ['、', '。', '！', '？']:
             structure.append({"type": "punc", "content": part})
         else:
-            tokens = [t for t in re.split(r'[ 　]+', part) if t] if " " in part or "　" in part else [t for t in re.split(f"({'|'.join(['は','が','を','に','へ','と','も','で','の','から','まで'])})", part) if t]
-            for token in tokens: structure.append({"type": "word", "content": token})
+            # 支援手動空格優先
+            if " " in part or "　" in part:
+                tokens = [t for t in re.split(r'[ 　]+', part) if t]
+            else:
+                particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
+                pattern = f"({'|'.join(particles)})"
+                tokens = [t for t in re.split(pattern, part) if t]
+            for token in tokens:
+                structure.append({"type": "word", "content": token})
     return structure
 
 @st.cache_data(ttl=60)
@@ -104,7 +128,17 @@ def load_data():
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 【重點 3】執行邏輯 ---
+# --- 【重點 3】接收自定義 HTML 按鈕事件 ---
+params = st.query_params
+if "q_click" in params:
+    idx = int(params["q_click"])
+    if idx not in st.session_state.used_history:
+        st.session_state.ans.append(st.session_state.shuf[idx])
+        st.session_state.used_history.append(idx)
+        st.query_params.clear() # 清除參數，避免 rerun 時重複觸發
+        st.rerun()
+
+# --- 【重點 4】主程式邏輯 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 10
     reset_state()
@@ -112,7 +146,7 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄簡化
+    # 側邊欄控制
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元", unit_list)
     unit_df = df[df[cols['unit']].astype(str) == sel_unit]
@@ -120,8 +154,8 @@ if df is not None:
     filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
     
     cs1, cs2 = st.sidebar.columns(2)
-    if cs1.button("➖ 少"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
-    if cs2.button("➕ 多"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
+    if cs1.button("➖ 少題"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
+    if cs2.button("➕ 多題"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
     
     preview_mode = st.sidebar.checkbox("📖 預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
@@ -130,7 +164,7 @@ if df is not None:
         st.subheader("📖 預習清單")
         for i, item in enumerate(quiz_list):
             st.markdown(f"**{i+1}. {item[cols['cn']]}**")
-            st.caption(item[cols['ja']])
+            st.write(item[cols['ja']])
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
             st.write("---")
     
@@ -145,30 +179,32 @@ if df is not None:
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # --- 1. 答案區 (格位縮小) ---
+        # --- A. 答案展示區 ---
         current_ans_list = list(st.session_state.ans)
-        html_content = '<div class="res-box">'
+        html_ans = '<div class="res-box">'
         for item in sentence_struct:
-            if item['type'] == 'punc': html_content += f'<span class="punc-display">{item["content"]}</span>'
+            if item['type'] == 'punc': html_ans += f'<span class="punc-display">{item["content"]}</span>'
             else:
                 val = current_ans_list.pop(0) if current_ans_list else ""
-                html_content += f'<div class="word-slot">{val}</div>'
-        html_content += '</div>'
-        st.markdown(html_content, unsafe_allow_html=True)
+                html_ans += f'<div class="word-slot">{val}</div>'
+        html_ans += '</div>'
+        st.markdown(html_ans, unsafe_allow_html=True)
 
         st.write("---")
 
-        # --- 2. 單字按鈕區 (位置上移，緊密排列) ---
-        num_shuf = len(st.session_state.shuf)
-        word_cols = st.columns(num_shuf if num_shuf > 0 else 1)
+        # --- B. 單字按鈕池 (位置對調：上移) ---
+        # 這裡不使用 st.columns，直接噴出 HTML Flexbox
+        btn_html = '<div class="btn-pool">'
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
-                if word_cols[idx].button(t, key=f"btn_{idx}"):
-                    st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
+                # 連結導向自己並帶上參數，實現「虛擬點擊」
+                btn_html += f'<a href="?q_click={idx}" target="_self" class="custom-btn">{t}</a>'
+        btn_html += '</div>'
+        st.markdown(btn_html, unsafe_allow_html=True)
 
-        st.write(" ") # 微小間隔
+        st.write(" ")
 
-        # --- 3. 功能導航鍵 (位置下移) ---
+        # --- C. 功能鍵 (位置對調：下移) ---
         n1, n2, n3, n4 = st.columns(4)
         if n1.button("⏮上"): 
             if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
@@ -179,7 +215,7 @@ if df is not None:
             if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
 
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
-            if st.button("🔍 CHECK", type="primary", use_container_width=True):
+            if st.button("🔍 CHECK ANSWER", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("不對喔！")
