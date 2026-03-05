@@ -4,7 +4,7 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文重組 (免標點版)", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 (標點預顯版)", layout="wide")
 
 # 加大手機版按鈕與文字
 st.markdown("""
@@ -29,6 +29,10 @@ st.markdown("""
         margin-bottom: 15px;
         line-height: 1.4;
     }
+    .punc-hint {
+        color: #94a3b8;
+        font-weight: bold;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -50,8 +54,7 @@ def load_data():
     except: return None, None
 
 def word_splitter(text):
-    """將助詞獨立切開，並過濾掉標點符號"""
-    # 移除標點符號
+    """將助詞獨立切開，並徹底過濾掉所有標點符號"""
     clean_text = re.sub(r'[、。！？\s]', '', text)
     particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
     pattern = f"({'|'.join(particles)})"
@@ -101,6 +104,10 @@ if df is not None:
             q = quiz_list[st.session_state.q_idx]
             ja_raw = str(q[cols['ja']]).strip()
             
+            # 獲取原句末尾的標點符號
+            punc_match = re.search(r'[。！？]+$', ja_raw)
+            punc_hint = punc_match.group() if punc_match else ""
+
             if not st.session_state.shuf:
                 st.session_state.shuf = word_splitter(ja_raw)
                 random.shuffle(st.session_state.shuf)
@@ -108,9 +115,14 @@ if df is not None:
             st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
             st.info(f"💡 {q[cols['cn']]}")
 
-            # 拼湊顯示區
-            res_str = "".join(st.session_state.ans)
-            st.markdown(f'<div class="res-box">{res_str if res_str else "請選取單字組合句子..."}</div>', unsafe_allow_html=True)
+            # --- 拼湊顯示區（包含標點符號提示） ---
+            user_input = "".join(st.session_state.ans)
+            if user_input:
+                display_text = f'{user_input}<span class="punc-hint">{punc_hint}</span>'
+            else:
+                display_text = f'<span style="color:#94a3b8; font-size:18px;">請選取單字... </span><span class="punc-hint">{punc_hint}</span>'
+            
+            st.markdown(f'<div class="res-box">{display_text}</div>', unsafe_allow_html=True)
 
             # 功能鍵
             c1, c2, c3 = st.columns([1, 1, 1])
@@ -125,7 +137,6 @@ if df is not None:
                     st.session_state.q_idx += 1; reset_state(); st.rerun()
 
             st.write("---")
-            # 2欄排列最適合 iPhone 手持
             btn_cols = st.columns(2) 
             for i, t in enumerate(st.session_state.shuf):
                 if i not in st.session_state.used_history:
@@ -137,7 +148,6 @@ if df is not None:
 
             if st.session_state.ans and not st.session_state.is_correct:
                 if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                    # 檢查時，把原始答案的標點也拿掉進行比對
                     clean_target = re.sub(r'[、。！？\s]', '', ja_raw)
                     if "".join(st.session_state.ans) == clean_target:
                         st.session_state.is_correct = True; st.rerun()
