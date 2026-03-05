@@ -146,4 +146,13 @@ if df is not None:
 
             if st.session_state.is_correct:
                 st.success(f"🎊 正解：{ja_raw}")
-                st.audio(f"
+                st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
+                if st.button("下一題 ➡️", type="primary", use_container_width=True):
+                    st.session_state.q_idx += 1; reset_state(); st.rerun()
+        else:
+            st.header("🎊 練習完成！")
+            st.balloons()
+            if st.button("🔄 重新開始", type="primary"):
+                reset_state(); st.rerun()
+    else:
+        st.warning("在此範圍下找不到題目。")
