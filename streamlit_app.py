@@ -1,13 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v7.5 防誤觸設定優化】
+【技術演進與邏輯追蹤表 - v7.6 比例與預設值最終修正】
 ----------------------------------------------------------------
-1. 題數調整優化：
-   - 使用 st.columns([1, 2, 1]) 將「-」、數值、「+」撐開，避免手指誤按。
-   - 預設練習題數維持在 5 題。
-2. 佈局安全感：
-   - 增加按鈕間的水平間距。
-   - 系統控制區與單字池持續保持美觀與壓縮。
+1. 修正項目：
+   - 預設題數：正式鎖定 st.session_state.num_q = 5。
+   - 比例調整：設定區的加減按鈕尺寸從巨大縮小為精緻方塊。
+2. 佈局邏輯：
+   - 使用 CSS 針對 .setting-btn 進行局部縮小，不影響主單字按鈕。
+   - 維持退回、重填、上題、下題的中文標籤。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,7 +20,7 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v7.5", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v7.6", layout="wide")
 
 st.markdown("""
     <style>
@@ -29,11 +29,9 @@ st.markdown("""
 
     /* 答案區 */
     .res-box { 
-        display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 10px; 
-        border-radius: 10px; border: 1.5px solid #e5e7eb; 
-        min-height: 42px; align-items: center; justify-content: center;
-        box-shadow: 0 3px 0 #e5e7eb; margin-bottom: 5px;
+        display: flex; flex-wrap: wrap; gap: 4px; background-color: #ffffff; padding: 10px; 
+        border-radius: 10px; border: 1.5px solid #e5e7eb; min-height: 42px; 
+        align-items: center; justify-content: center; box-shadow: 0 3px 0 #e5e7eb; margin-bottom: 5px;
     }
     .word-slot { 
         min-width: 25px; height: 22px; border-bottom: 2px solid #afafaf; 
@@ -44,32 +42,33 @@ st.markdown("""
     /* 單字池置中 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
-        flex-direction: row !important; gap: 8px !important;
-        justify-content: center !important;
+        flex-direction: row !important; gap: 8px !important; justify-content: center !important;
     }
 
-    /* 通用按鈕樣式 */
+    /* 主單字按鈕 */
     div.stButton > button {
         width: auto !important; min-width: 45px !important;
         padding: 6px 14px !important; border-radius: 12px !important;
         font-size: 16px !important; font-weight: bold !important;
-        background-color: white !important;
-        border: 2px solid #e5e7eb !important;
+        background-color: white !important; border: 2px solid #e5e7eb !important;
         border-bottom: 3.5px solid #e5e7eb !important;
     }
     
     /* 系統操作按鈕 */
     .control-row div.stButton > button {
-        padding: 4px 10px !important; 
-        font-size: 13px !important;
-        color: #777 !important;
-        border-radius: 8px !important;
+        padding: 4px 10px !important; font-size: 13px !important;
+        color: #777 !important; border-radius: 8px !important;
     }
 
-    /* 題數調整專用樣式 */
+    /* 【關鍵修正】題數設定小按鈕尺寸限制 */
+    .setting-area div.stButton > button {
+        min-width: 35px !important; height: 35px !important;
+        font-size: 14px !important; padding: 0px !important;
+    }
+
     .num-display { 
-        text-align: center; font-size: 20px; font-weight: bold; 
-        color: #1cb0f6; line-height: 40px;
+        text-align: center; font-size: 18px; font-weight: bold; 
+        color: #1cb0f6; line-height: 35px;
     }
 
     .hint-text { font-size: 12px; color: #ccc; text-align: center; margin-bottom: 2px; }
@@ -88,7 +87,7 @@ def load_data():
     except: return None, None
 
 def get_sentence_structure(text):
-    pts = ['は','が','を','に','へ','出','と','も','で','の','から','まで']
+    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
     raw = re.split(r'([、。！？])', text.strip())
     struct = []
     for p in raw:
@@ -112,9 +111,9 @@ def get_audio_html(text):
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 3. 初始化 ---
+# --- 3. 初始化 (預設 5 題) ---
+if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
-if 'num_q' not in st.session_state: st.session_state.num_q = 5 # 預設 5 題
 if 'ans' not in st.session_state: reset_state()
 
 df, cols = load_data()
@@ -128,7 +127,8 @@ if df is not None:
         sel_start_ch = st.selectbox("起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
         
         st.write("題數調整：")
-        # 防誤觸設計：加大按鈕間距
+        # 精緻化調整區
+        st.markdown('<div class="setting-area">', unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 1, 1])
         if c1.button("➖"):
             st.session_state.num_q = max(1, st.session_state.num_q - 1)
@@ -136,6 +136,7 @@ if df is not None:
             st.markdown(f'<div class="num-display">{st.session_state.num_q}</div>', unsafe_allow_html=True)
         if c3.button("➕"):
             st.session_state.num_q = min(50, st.session_state.num_q + 1)
+        st.markdown('</div>', unsafe_allow_html=True)
         
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
         preview_mode = st.checkbox("預習模式")
