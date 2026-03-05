@@ -40,41 +40,45 @@ def load_data():
 def word_splitter(text):
     """
     強化版分詞器：
-    1. 確實切割助詞、標點符號。
-    2. 過濾所有多餘的空白字元，防止出現空格按鈕。
+    1. 移除所有空白（全形與半形）。
+    2. 保護「どのくらい」、「ありがとうございます」等常用語。
+    3. 確實切割助詞與標點符號。
     """
-    # 先把字串內部的所有空格（半形與全形）徹底移除
+    # [步驟 1] 徹底移除所有空白字元
     text = re.sub(r'[\s\u3000]', '', text)
     
-    # 保護長單字清單
+    # [步驟 2] 保護名單：防止被助詞邏輯切碎
     protected = [
         'ありがとうございます', 'ありがとうございました', 
-        'すみません', 'ごめんなさい', 'おはようございます',
-        '失礼します', 'お疲れ様です'
+        'どのくらい', 'どのぐらい', 'すみません', 'ごめんなさい', 
+        'おはようございます', '失礼します', 'お疲れ様です'
     ]
     for w in protected:
+        # 使用特殊標記保護
         text = text.replace(w, f" __{w}__ ")
 
-    # 定義拆分點：助詞與標點
-    particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで', 'です', 'ます']
+    # [步驟 3] 定義拆分點：助詞與標點
+    # 將長度較長的詞（如「から」）放在前面，避免被先切成單個字
+    particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
     
     # 建立正則表達式
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     
-    # 執行拆分
+    # [步驟 4] 執行拆分
     raw_parts = re.split(pattern, text)
     
-    # 嚴格清理結果：過濾掉空字串及只有空白的片段
+    # [步驟 5] 嚴格清理結果：過濾掉空值，還原被保護的單字
     tokens = []
     for p in raw_parts:
         p_clean = p.strip()
-        if not p_clean: continue # 如果是空的就跳過
+        if not p_clean: continue # 絕對不允許空白進入
         
         if p_clean.startswith("__") and p_clean.endswith("__"):
             tokens.append(p_clean.replace("__", ""))
         else:
             tokens.append(p_clean)
+            
     return tokens
 
 def reset_state():
@@ -111,7 +115,6 @@ if df is not None:
         if st.button("➕ 多一題"):
             if st.session_state.num_q < max_q: st.session_state.num_q += 1; st.rerun()
 
-    if st.session_state.num_q > max_q: st.session_state.num_q = max_q
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     ckey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
@@ -165,7 +168,6 @@ if df is not None:
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                # 移除原句中的空格後比對
                 clean_target = re.sub(r'[\s\u3000]', '', ja_raw)
                 if "".join(st.session_state.ans) == clean_target:
                     st.session_state.is_correct = True; st.rerun()
