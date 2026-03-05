@@ -4,7 +4,7 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文全單字重組 (增加上一題版)", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文全單字重組 (智慧排序版)", layout="wide")
 
 # 手機版 UI 優化
 st.markdown("""
@@ -37,17 +37,23 @@ def load_data():
         return df.dropna(subset=[cols['ja'], cols['cn']]), cols
     except: return None, None
 
+def natural_sort_key(s):
+    """
+    智慧排序輔助函數：將字串中的數字部分轉換為整數進行比較
+    例如：'2' 會排在 '10' 之前，'01-A' 會排在 '02-A' 之前
+    """
+    return [int(text) if text.isdigit() else text.lower()
+            for text in re.split('([0-9]+)', s)]
+
 def word_splitter(text):
     text = re.sub(r'[\s\u3000]', '', text)
     protected = ['ありがとうございます', 'ありがとうございました', 'どのくらい', 'どのぐらい', 'すみません', 'ごめんなさい', 'おはようございます', '失礼します', 'お疲れ様です']
     for i, w in enumerate(protected):
         text = text.replace(w, f"TOKEN{i}PROTECT")
-
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     raw_parts = re.split(pattern, text)
-    
     tokens = []
     for p in raw_parts:
         if not p: continue
@@ -66,7 +72,6 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# 初始化
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
     st.session_state.num_q = 10
@@ -75,13 +80,25 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄
+    # --- 側邊欄 ---
+    st.sidebar.header("⚙️ 練習設定")
+    
+    # 1. 單元排序
     u_list = sorted(df[cols['unit']].unique())
     sel_unit = st.sidebar.selectbox("選擇單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
-    c_list = sorted(u_df[cols['ch']].unique())
+    
+    # 2. 章節智慧排序 (關鍵修正！)
+    c_list_raw = u_df[cols['ch']].unique().tolist()
+    c_list = sorted(c_list_raw, key=natural_sort_key)
     sel_start_ch = st.sidebar.selectbox("起始章節", c_list)
-    filtered_df = u_df[u_df[cols['ch']] >= sel_start_ch]
+    
+    # 3. 過濾範圍 (同樣使用智慧排序邏輯來過濾 >= 起始章節的項目)
+    # 這裡找出選擇章節在排序後清單中的位置，取其後的章節
+    start_idx = c_list.index(sel_start_ch)
+    valid_chapters = c_list[start_idx:]
+    filtered_df = u_df[u_df[cols['ch']].isin(valid_chapters)]
+    
     max_q = len(filtered_df)
 
     st.sidebar.write(f"練習題數： **{st.session_state.num_q}**")
@@ -100,6 +117,7 @@ if df is not None:
         st.session_state.lkey = ckey
         st.session_state.q_idx = 0; reset_state(); st.rerun()
 
+    # --- 主畫面 ---
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
@@ -120,7 +138,6 @@ if df is not None:
         user_ans = "".join(st.session_state.ans)
         st.markdown(f'<div class="res-box">{user_ans if user_ans else "請點選按鈕拼湊句子..."}</div>', unsafe_allow_html=True)
 
-        # 功能鍵區 (改為 4 欄)
         ctrl_cols = st.columns(4)
         with ctrl_cols[0]:
             if st.button("🔄重填"): reset_state(); st.rerun()
@@ -129,13 +146,9 @@ if df is not None:
                 if st.session_state.used_history:
                     st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
         with ctrl_cols[2]:
-            # 上一題功能
-            btn_prev = st.button("⏮️上題")
-            if btn_prev:
+            if st.button("⏮️上題"):
                 if st.session_state.q_idx > 0:
-                    st.session_state.q_idx -= 1
-                    reset_state()
-                    st.rerun()
+                    st.session_state.q_idx -= 1; reset_state(); st.rerun()
         with ctrl_cols[3]:
             if st.button("⏭️下題"):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
@@ -146,9 +159,7 @@ if df is not None:
             if t and t.strip() and i not in st.session_state.used_history:
                 with b_cols[i % 2]:
                     if st.button(t, key=f"btn_{i}"):
-                        st.session_state.ans.append(t)
-                        st.session_state.used_history.append(i)
-                        st.rerun()
+                        st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
