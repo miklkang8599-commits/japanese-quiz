@@ -1,14 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v6.5 最終介面鎖定版】
+【技術演進與邏輯追蹤表 - v6.6 內嵌設定版】
 ----------------------------------------------------------------
-1. 側邊欄消失解決：
-   - 移除所有全局 CSS !important 限制。
-   - 新增手動按鈕，利用 JS 直接觸發側邊欄開關，確保手機 100% 可見。
-2. 功能鍵順序重組：
-   - 依照要求重排：退回 -> 重填 -> 上一題 -> 下一題。
-3. 手機併排穩定性：
-   - 使用 flex-grow: 1 讓四個控制按鈕平分底部寬度。
+1. 側邊欄失效解決：
+   - 徹底放棄 Sidebar 導航，改將設定選單「內嵌」在主畫面前端。
+   - 使用 st.expander (預設收合)，解決手機看不到側邊欄的問題。
+2. 功能鍵順序鎖定：
+   - 退回 -> 重填 -> 上一題 -> 下一題。
+3. 併排穩定性：
+   - 移除所有導致側邊欄消失的全局 CSS，確保 UI 100% 穩定。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,17 +20,17 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與側邊欄守護 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.5", layout="wide")
+# --- 1. 頁面配置 ---
+st.set_page_config(page_title="🇯🇵 日文重組 v6.6", layout="wide")
 
 st.markdown("""
     <style>
-    /* 答案區展示：格位極致扁平 */
+    /* 答案區展示：扁平簡潔 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 10px; 
+        background-color: #f9fafb; padding: 10px; 
         border-radius: 12px; border: 1.5px solid #e5e7eb; 
-        min-height: 45px; align-items: center; margin-bottom: 10px;
+        min-height: 45px; align-items: center; margin-bottom: 8px;
     }
     .word-slot { 
         min-width: 28px; height: 24px; border-bottom: 2px solid #1cb0f6; 
@@ -38,7 +38,7 @@ st.markdown("""
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 單字按鈕池：手機併排核心 */
+    /* 單字按鈕池：手機併排核心 (不使用 columns) */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-wrap: wrap !important;
@@ -46,27 +46,22 @@ st.markdown("""
         gap: 5px !important;
     }
 
-    /* 每個單字按鈕寬度自動 */
+    /* 原生按鈕視覺優化 */
     div.stButton > button {
         width: auto !important;
-        min-width: 40px !important;
-        padding: 4px 10px !important;
+        min-width: 45px !important;
+        padding: 5px 12px !important;
         border-radius: 8px !important;
-        border-bottom: 3px solid #e5e7eb !important;
+        border-bottom: 3.5px solid #e5e7eb !important;
         font-weight: bold !important;
     }
     
-    /* 底部功能鍵：強制平分寬度並併排 */
+    /* 底部功能控制列 */
     .control-row [data-testid="column"] {
         flex: 1 1 0% !important;
         min-width: 0px !important;
     }
-    .control-row button {
-        font-size: 13px !important;
-        padding: 4px 2px !important;
-        width: 100% !important;
-    }
-
+    
     .block-container { padding: 0.5rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     </style>
@@ -121,27 +116,20 @@ if 'ans' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄邏輯
-    st.sidebar.header("⚙️ 練習設定")
-    unit_list = sorted(df[cols['unit']].astype(str).unique())
-    sel_unit = st.sidebar.selectbox("單元選擇", unit_list)
-    unit_df = df[df[cols['unit']].astype(str) == sel_unit]
-    sel_start_ch = st.sidebar.selectbox("起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
-    filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
-    preview_mode = st.sidebar.checkbox("📖 開啟預習模式")
-    quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
+    # 【重點：內嵌式設定選單】
+    with st.expander("⚙️ 練習設定與單元選擇"):
+        unit_list = sorted(df[cols['unit']].astype(str).unique())
+        sel_unit = st.selectbox("1. 選擇單元", unit_list)
+        unit_df = df[df[cols['unit']].astype(str) == sel_unit]
+        sel_start_ch = st.selectbox("2. 起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
+        filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
+        preview_mode = st.checkbox("📖 開啟預習清單")
+        
+        c_set1, c_set2 = st.columns(2)
+        if c_set1.button("➖ 少題"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
+        if c_set2.button("➕ 多題"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
 
-    # 【新增】頂部手動喚醒按鈕
-    t1, t2 = st.columns([3, 1])
-    t1.caption(f"Q{st.session_state.q_idx + 1} | 共 {len(quiz_list)} 題")
-    if t2.button("⚙️ 設定"):
-        # JS 腳本：尋找 Streamlit 的側邊欄按鈕並點擊它
-        st.components.v1.html("""
-            <script>
-            const sidebarBtn = window.parent.document.querySelector('button[data-testid="stSidebarCollapseButton"]');
-            if (sidebarBtn) sidebarBtn.click();
-            </script>
-        """, height=0)
+    quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if preview_mode:
         for i, item in enumerate(quiz_list):
@@ -160,6 +148,7 @@ if df is not None:
             random.seed(st.session_state.q_idx)
             random.shuffle(st.session_state.shuf)
 
+        st.caption(f"Q{st.session_state.q_idx + 1} | 共 {len(quiz_list)} 題")
         st.info(f"💡 {cn_text}")
 
         # A. 答案展示區
@@ -174,7 +163,7 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字池
+        # B. 單字選擇
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
@@ -182,7 +171,7 @@ if df is not None:
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 功能控制鍵 (依照新順序：退回 -> 重填 -> 上一題 -> 下一題)
+        # C. 功能按鈕 (依照新順序：退回 -> 重填 -> 上一題 -> 下一題)
         st.write("---")
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         n1, n2, n3, n4 = st.columns(4)
@@ -201,10 +190,10 @@ if df is not None:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("不對喔！")
+                else: st.error("順序不對喔！")
 
         if st.session_state.is_correct:
             st.success("正解！")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
-            if st.button("繼續下一題 ➡️", type="primary", use_container_width=True): 
+            if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
