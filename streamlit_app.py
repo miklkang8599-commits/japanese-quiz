@@ -4,7 +4,7 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文單字重組練習器", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文助詞重組練習器", layout="wide")
 
 # --- 1. 設定 Google Sheets 資訊 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
@@ -31,22 +31,27 @@ def load_data():
 
 def word_splitter(text):
     """
-    專門處理日文單字拆解的邏輯：
-    1. 優先按標點符號拆分。
-    2. 針對日文助詞 (は, が, を, に, へ, と, も, で) 進行拆分並保留助詞。
+    更精細的拆解邏輯：將助詞獨立切開
     """
-    # 移除首尾空白
     text = text.strip()
-    # 使用正則表達式在助詞後面加上切割符號，方便拆分單字
-    # 此正則會匹配常見助詞並在其後方切斷，但保留助詞本身
-    pattern = r'([^はがをにへともで、。！？]+[はがをにへとも密で、。！？]?)'
-    tokens = re.findall(pattern, text)
+    # 定義要獨立切開的助詞清單
+    particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
     
-    # 如果拆分結果太少（句子太短），則每 1~2 個字強制拆分一次
+    # 建立正則表達式：在助詞前後加上分隔符號
+    # 用括號捕捉助詞，以便保留在 split 結果中
+    pattern = f"({'|'.join(particles)}|、|。|！|？)"
+    
+    # 切分句子
+    raw_tokens = re.split(pattern, text)
+    
+    # 過濾掉空字串並清理
+    tokens = [t for t in raw_tokens if t and t.strip()]
+    
+    # 如果切出來太少（例如沒有助詞的短句），則每兩個字強拆
     if len(tokens) < 3:
         tokens = [text[i:i+2] for i in range(0, len(text), 2)]
-    
-    return [t for t in tokens if t.strip()]
+        
+    return tokens
 
 def reset_state():
     st.session_state.q_idx = 0
@@ -87,17 +92,16 @@ if df is not None:
             q = quiz_list[st.session_state.q_idx]
             ja_raw = str(q[cols['ja']]).strip()
             
-            # --- 單字拆解關鍵處 ---
             if not st.session_state.shuf:
                 tokens = word_splitter(ja_raw)
                 random.shuffle(tokens)
                 st.session_state.shuf = tokens
 
             st.title(f"問題 {st.session_state.q_idx + 1} / {len(quiz_list)}")
-            st.info(f"💡 中文意思：{q[cols['cn']]}")
+            st.info(f"💡 中文：{q[cols['cn']]}")
 
             res_str = "".join(st.session_state.ans)
-            st.markdown(f'<div style="font-size:32px; color:#1e3a8a; background-color:#f0f9ff; padding:25px; border-radius:15px; border:2px solid #7dd3fc; min-height:100px; margin-bottom:20px; display: flex; align-items: center;">{res_str if res_str else "請依序點選單字組合句子..."}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:32px; color:#1e3a8a; background-color:#f0f9ff; padding:25px; border-radius:15px; border:2px solid #7dd3fc; min-height:100px; margin-bottom:20px; display: flex; align-items: center; flex-wrap: wrap;">{res_str if res_str else "請選取單字與助詞..."}</div>', unsafe_allow_html=True)
 
             c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
@@ -112,13 +116,12 @@ if df is not None:
                     st.session_state.q_idx += 1; reset_state(); st.rerun()
 
             st.write("---")
-            # 按鈕顯示區（自動換行）
-            st.write("### 可選單字：")
-            btn_container = st.container()
-            cols_btn = st.columns(4) # 每列放 4 個單字
+            # 隨機排布的單字與助詞按鈕
+            btn_cols = st.columns(5) 
             for i, t in enumerate(st.session_state.shuf):
                 if i not in st.session_state.used_history:
-                    with cols_btn[i % 4]:
+                    with btn_cols[i % 5]:
+                        # 助詞按鈕給予不同的視覺暗示（例如更醒目）
                         if st.button(t, key=f"btn_{i}", use_container_width=True):
                             st.session_state.ans.append(t)
                             st.session_state.used_history.append(i)
@@ -126,10 +129,9 @@ if df is not None:
 
             if len(st.session_state.ans) > 0 and not st.session_state.is_correct:
                 if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                    # 檢查時移除所有空格對比
                     if "".join(st.session_state.ans).replace(" ","") == ja_raw.replace(" ",""):
                         st.session_state.is_correct = True; st.rerun()
-                    else: st.error("順序不對喔，再檢查一下單字位置！")
+                    else: st.error("順序不對喔！檢查看看助詞是否放錯了？")
 
             if st.session_state.is_correct:
                 st.success(f"🎊 正解！{ja_raw}")
@@ -141,4 +143,4 @@ if df is not None:
             st.balloons()
             if st.button("🔄 重新開始"): reset_state(); st.rerun()
     else:
-        st.warning(f"⚠️ 篩選範圍內沒有資料。目前選定的單元是 {sel_unit}。")
+        st.warning(f"⚠️ 篩選範圍內沒有資料。")
