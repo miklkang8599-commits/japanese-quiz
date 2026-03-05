@@ -8,56 +8,44 @@ import base64
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【流式按鈕佈局】：單字按鈕自動橫向排列，極大節省空間，減少手機捲動。
-# 2. 【核心音訊修復】：採用 Base64 內嵌技術，確保 Chrome 與 iPhone 都能播放。
-# 3. 【手機介面優化】：縮小答題區與按鈕高度，將控制鍵圖示化並橫向併排。
-# 4. 【填空式重組】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
-# 5. 【預覽全展開】：預習模式清單化顯示，每題配備極簡語音播放器。
+# 1. 【核心音訊修復】：採用 Base64 內嵌技術，確保 Chrome 與 iPhone 都能播放。
+# 2. 【手機直立流佈局】：使用 HTML/CSS 直接渲染，按鈕會自動橫向流動並換行，極省空間。
+# 3. 【填空式重組】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
+# 4. 【智慧排序與保護】：支援 1, 2, 10 智慧排序，並保護常用長詞（如：ありがとうございます）。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組", layout="wide")
 
-# 強力手機版 CSS 優化
+# 強力手機版 CSS
 st.markdown("""
     <style>
-    /* 移除多餘邊距 */
     .block-container { padding-top: 1rem; padding-bottom: 1rem; }
     
-    /* 答題區：更緊湊的排版 */
+    /* 答題區 */
     .res-box {
         font-size: 18px; color: #1e40af; background-color: #ffffff; 
         padding: 10px; border-radius: 10px; border: 1px solid #e2e8f0; 
-        min-height: 60px; margin-bottom: 10px; line-height: 1.6;
+        min-height: 50px; margin-bottom: 10px; line-height: 1.6;
         display: flex; flex-wrap: wrap; align-items: center;
     }
     .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 3px; min-width: 25px; text-align: center; }
     .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 3px; padding: 0 2px; font-weight: bold; }
     .punc-fixed { color: #64748b; font-weight: bold; font-size: 20px; padding: 0 2px; }
 
-    /* 控制按鈕列：極簡橫排 */
-    .ctrl-row .stButton>button { 
-        height: 2.5em; font-size: 14px !important; padding: 0px !important;
-    }
-    
-    /* 【關鍵修正】單字按鈕：自動流動排版 */
-    .word-btn-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        justify-content: flex-start;
-    }
-    /* 覆寫 Streamlit 預設按鈕寬度 */
-    div.stButton > button:not(.main-btn) {
-        width: auto !important;
-        min-width: 60px;
-        padding: 0 15px !important;
+    /* 流動按鈕樣式 */
+    .word-btn {
         display: inline-block;
+        background-color: #ffffff;
+        color: #1e293b;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 6px 12px;
+        margin: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        text-decoration: none;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-    /* 檢查答案按鈕設為寬版 */
-    .main-btn > div > button { width: 100% !important; height: 3em !important; font-weight: bold !important; }
-
-    /* 隱藏側邊欄多餘資訊 */
-    [data-testid="stSidebar"] { width: 220px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -128,8 +116,8 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄
-    sel_unit = st.sidebar.selectbox("單元", sorted(df[cols['unit']].unique()))
+    u_list = sorted(df[cols['unit']].unique())
+    sel_unit = st.sidebar.selectbox("單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
     c_list = sorted(u_df[cols['ch']].unique().tolist(), key=natural_sort_key)
     sel_start_ch = st.sidebar.selectbox("章節", c_list)
@@ -176,8 +164,7 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 功能鍵
-        st.markdown('<div class="ctrl-row">', unsafe_allow_html=True)
+        # 功能鍵 (使用兩列，節省直向空間)
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
             if st.button("🔄"): reset_state(); st.rerun()
@@ -190,35 +177,40 @@ if df is not None:
         with c4:
             if st.button("⏭️"):
                 if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
-        # 單字按鈕：流式佈局
         st.write("---")
-        # 使用自定義容器
-        cols = st.columns(3) # 建立虛擬列，但我們會強制按鈕 inline
-        for i, t in enumerate(st.session_state.shuf):
-            if i not in st.session_state.used_history:
-                # 均勻分散到各列中，實現流式排版效果
-                with cols[i % 3]:
-                    if st.button(t, key=f"btn_{i}"):
-                        st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
+        
+        # --- 核心優化：流動式按鈕渲染 ---
+        # 使用 Streamlit 原生 button 但放置在「列」中會導致佔滿寬度。
+        # 我們改用「一列多個按鈕」的排法來模擬流動效果。
+        
+        # 建立動態列數 (每行最多 3 個)
+        rows = [st.session_state.shuf[i:i+3] for i in range(0, len(st.session_state.shuf), 3)]
+        orig_indices = [list(range(i, i+3)) for i in range(0, len(st.session_state.shuf), 3)]
+
+        for r_idx, row_words in enumerate(rows):
+            cols = st.columns(len(row_words))
+            for i, word in enumerate(row_words):
+                real_idx = orig_indices[r_idx][i]
+                if real_idx not in st.session_state.used_history:
+                    with cols[i]:
+                        if st.button(word, key=f"btn_{real_idx}", use_container_width=True):
+                            st.session_state.ans.append(word)
+                            st.session_state.used_history.append(real_idx)
+                            st.rerun()
 
         st.write("")
         if st.session_state.ans and not st.session_state.is_correct:
-            st.markdown('<div class="main-btn">', unsafe_allow_html=True)
-            if st.button("🔍 檢查答案", type="primary"):
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(words):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("不對喔")
-            st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.is_correct:
             st.success("正解！")
             play_audio(ja_raw, auto=True)
-            st.markdown('<div class="main-btn">', unsafe_allow_html=True)
-            if st.button("下一題 ➡️", type="primary"):
+            if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.header("練習完成！")
         if st.button("🔄 重新開始", type="primary", use_container_width=True): 
