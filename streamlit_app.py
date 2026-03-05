@@ -1,19 +1,15 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v4.3 物理極限版】
+【技術演進與邏輯追蹤表 - v4.2 最終穩定版】
 ----------------------------------------------------------------
-- v3.8~v4.1 (黑科技失敗回顧)：
-  使用 HTML/JS/Iframe。
-  失敗原因：手機瀏覽器對 iframe 點擊傳輸極不穩定（沒反應），且會導致側邊欄重置。
+- v4.1 (舊方法回顧)：使用 HTML Component。
+  失敗原因：手機瀏覽器的沙盒機制導致點擊通訊中斷（無反應），且 iframe 載入會干擾側邊欄顯示。
 
-- v4.2~v4.3 (最終解法：容器解構法)：
-  邏輯：回歸 st.button 是為了保證「點擊反應」與「側邊欄穩定」。
-  核心突破：
-  1. 針對 data-testid="stHorizontalBlock" (Streamlit 的列容器) 強制注入 
-     display: flex !important 與 flex-direction: row !important。
-  2. 這是從「外層容器」鎖死排版，不管 Streamlit JS 怎麼偵測手機寬度，
-     都無法將這區塊轉為垂直排列。
-  3. 這是目前在維持 App 功能完整下，唯一能實現手機直立併排的手段。
+- v4.2 (本次解法 - 強制 Flex 佈局)：
+  邏輯：回歸原生 st.button，但透過 CSS 強行修改其渲染行為。
+  1. 容器解鎖：針對 data-testid="stHorizontalBlock" 強制注入 flex-flow: row wrap。
+  2. 按鈕縮減：強迫 st.button 拋棄 100% 寬度，改為內容寬度 (width: auto)。
+  3. 側邊欄保全：不使用任何 iframe 或 URL 參數，保證側邊欄與頁面狀態 100% 同步。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -25,60 +21,57 @@ import re
 import requests
 import base64
 
-# --- 【核心】強制容器橫向 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v4.3", layout="wide")
+# --- 【核心】手機併排絕對解決 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v4.2", layout="wide")
 
 st.markdown("""
     <style>
-    /* 強制打破 Streamlit 的手機堆疊規則：鎖定主畫面測驗區 */
+    /* 1. 強制讓手機版的欄位「併排」而非「堆疊」 */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
-        flex-direction: row !important; /* 禁止垂直堆疊 */
-        flex-wrap: wrap !important;     /* 允許自動換行 */
-        align-items: center !important;
-        gap: 3px !important;            /* 極致緊湊 */
+        flex-direction: row !important; 
+        flex-wrap: wrap !important;
+        align-items: flex-start !important;
+        gap: 4px !important;
     }
 
-    /* 讓 Column 容器寬度隨內容變化，不要佔滿一整列 */
+    /* 2. 讓每個按鈕欄位不要佔據整行 */
     [data-testid="column"] {
         width: auto !important;
         flex: 0 1 auto !important;
         min-width: 0px !important;
-        padding: 0px !important;
     }
 
-    /* 仿 Duolingo 緊實按鈕樣式 */
+    /* 3. 強制按鈕寬度縮小，不要撐滿欄位 */
     div.stButton > button {
         width: auto !important;
-        padding: 4px 10px !important;
-        border-radius: 10px !important;
-        border: 1.5px solid #e5e7eb !important;
-        border-bottom: 3.5px solid #e5e7eb !important;
-        font-size: 16px !important;
-        background-color: white !important;
-        color: #4b4b4b !important;
+        min-width: 40px !important;
+        padding: 4px 12px !important;
+        border-radius: 8px !important;
+        border-bottom: 3px solid #e5e7eb !important;
+        font-weight: bold !important;
     }
 
-    /* 答案格位微縮化 */
+    /* 4. 答案格位縮小 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #f9fafb; padding: 10px; 
-        border-radius: 10px; border: 1.5px solid #e5e7eb; 
-        min-height: 55px; align-items: center; margin-bottom: 5px;
+        background-color: #f8fafc; padding: 10px; 
+        border-radius: 8px; border: 1.5px solid #e2e8f0; 
+        min-height: 55px; align-items: center; 
     }
     .word-slot { 
-        min-width: 35px; height: 28px; border-bottom: 2px solid #1cb0f6; 
+        min-width: 30px; height: 26px; border-bottom: 2px solid #3b82f6; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 18px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
+        font-size: 16px; color: #2563eb; font-weight: bold; margin: 0 2px;
     }
 
-    /* 移除頂部間距 */
-    .block-container { padding: 0.5rem 0.3rem !important; }
+    /* 介面壓縮 */
+    .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 功能函數 (音訊 Base64) ---
+# --- 功能函數 ---
 def get_audio_html(text):
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
     try:
@@ -97,10 +90,7 @@ def get_sentence_structure(text):
         if part in ['、', '。', '！', '？']:
             structure.append({"type": "punc", "content": part})
         else:
-            if " " in part or "　" in part:
-                tokens = [t for t in re.split(r'[ 　]+', part) if t]
-            else:
-                tokens = [t for t in re.split(f"({'|'.join(['は','が','を','に','へ','と','も','で','の','から','まで'])})", part) if t]
+            tokens = [t for t in re.split(r'[ 　]+', part) if t] if " " in part or "　" in part else [t for t in re.split(f"({'|'.join(['は','が','を','に','へ','と','も','で','の','から','まで'])})", part) if t]
             for token in tokens: structure.append({"type": "word", "content": token})
     return structure
 
@@ -118,7 +108,7 @@ def load_data():
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 核心執行區 ---
+# --- 邏輯開始 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 10
     reset_state()
@@ -126,7 +116,7 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄
+    # 側邊欄 (這版絕對正常)
     st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元選擇", unit_list)
@@ -134,7 +124,7 @@ if df is not None:
     sel_start_ch = st.sidebar.selectbox("起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
     filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
     
-    preview_mode = st.sidebar.checkbox("📖 開啟預習模式")
+    preview_mode = st.sidebar.checkbox("📖 預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if preview_mode:
@@ -155,7 +145,7 @@ if df is not None:
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # --- A. 答案格位 ---
+        # --- A. 答案區 ---
         curr_ans = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
@@ -169,34 +159,31 @@ if df is not None:
 
         st.write("---")
 
-        # --- B. 單字按鈕池 (強制併排核心) ---
+        # --- B. 單字按鈕池 (核心修復) ---
         num_shuf = len(st.session_state.shuf)
-        # 建立動態列，CSS 會保證它們在手機上橫向排列
         word_cols = st.columns(num_shuf if num_shuf > 0 else 1)
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if word_cols[idx].button(t, key=f"btn_{idx}"):
-                    st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
+                    st.session_state.ans.append(t)
+                    st.session_state.used_history.append(idx)
+                    st.rerun()
 
-        # --- C. 功能鍵 (底部併排) ---
+        # --- C. 功能鍵 (置底) ---
         st.write(" ")
         n1, n2, n3, n4 = st.columns(4)
-        if n1.button("⏮上"): 
-            st.session_state.q_idx = max(0, st.session_state.q_idx-1)
-            reset_state(); st.rerun()
-        if n2.button("⏭下"): 
-            st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1)
-            reset_state(); st.rerun()
-        if n3.button("🔄重"): reset_state(); st.rerun()
+        n1.button("⏮上", on_click=lambda: (st.session_state.update({"q_idx": max(0, st.session_state.q_idx-1)}), reset_state()))
+        n2.button("⏭下", on_click=lambda: (st.session_state.update({"q_idx": min(len(quiz_list)-1, st.session_state.q_idx+1)}), reset_state()))
+        n3.button("🔄重", on_click=reset_state)
         if n4.button("⬅退"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
 
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
-            if st.button("🔍 CHECK ANSWER", type="primary", use_container_width=True):
+            if st.button("🔍 CHECK", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: st.error("不對喔！")
 
         if st.session_state.is_correct:
             st.success("正解！")
