@@ -1,9 +1,12 @@
 """
 ================================================================
-【日文結構練習器 - 排版修正版】
-版本編號：v2.9.20260306
+【日文結構練習器 - Duolingo 風格版】
+版本編號：v3.0.20260306
 更新時間：2026-03-06
-重點標註：精確化 CSS 作用範圍，修復頂部消失問題，保持手機直立按鈕併排。
+設計重點：
+1. 仿 Duolingo 流式佈局 (Flexbox Wrap)：按鈕隨文字長度自動排列。
+2. 視覺優化：圓角卡片設計、加大字體、減少手機端滑動。
+3. 頂部導航守護：確保主畫面優化不干擾選單功能。
 ================================================================
 """
 
@@ -14,56 +17,72 @@ import re
 import requests
 import base64
 
-# --- 【重點 1】精確範圍 CSS 優化 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v2.9", layout="wide")
+# --- 【重點 1】Duolingo 風格 CSS 精算 ---
+st.set_page_config(page_title="🇯🇵 日文重組 v3.0", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. 只針對『主內容區』的列進行強制併排，不影響頂部與側邊欄 */
+    /* 1. 核心：強制主畫面 Column 變為 Flex 容器，模擬 Duolingo 流動排列 */
     [data-testid="stMain"] [data-testid="column"] {
-        width: calc(33% - 0.5rem) !important;
-        flex: 1 1 calc(33% - 0.5rem) !important;
-        min-width: calc(33% - 0.5rem) !important;
+        flex: 0 1 auto !important;
+        width: auto !important;
+        min-width: 0px !important;
     }
-    
-    /* 2. 修正頂部空白，確保不遮擋 */
-    .block-container { padding-top: 2rem !important; }
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        justify-content: flex-start !important;
+    }
 
-    /* 3. 答案顯示區優化 */
+    /* 2. 答案區：卡片式設計 */
     .res-box { 
-        display: flex; flex-wrap: wrap; gap: 5px; 
-        background-color: #f0f7ff; padding: 12px; 
-        border-radius: 12px; border: 1.5px solid #bcd7ff; 
-        min-height: 80px; margin-bottom: 10px; align-items: center; 
+        display: flex; flex-wrap: wrap; gap: 10px; 
+        background-color: #ffffff; padding: 20px; 
+        border-radius: 18px; border: 2px solid #e5e7eb; 
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        min-height: 110px; margin-bottom: 15px; align-items: center; 
     }
     .word-slot { 
-        min-width: 48px; height: 38px; border-bottom: 2.5px solid #93c5fd; 
+        min-width: 55px; height: 42px; border-bottom: 3px solid #e5e7eb; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 20px; color: #1e40af; font-weight: bold; 
+        font-size: 21px; color: #1cb0f6; font-weight: bold; 
     }
-    .punc-display { font-size: 22px; color: #94a3b8; font-weight: bold; }
+    .punc-display { font-size: 24px; color: #afafaf; font-weight: bold; }
 
-    /* 4. 按鈕視覺精修 */
+    /* 3. 按鈕視覺：仿 Duolingo 圓角與陰影 */
     div.stButton > button {
-        border-radius: 6px !important;
-        height: 2.8em !important;
-        font-size: 15px !important;
+        border-radius: 12px !important;
+        border: 2px solid #e5e7eb !important;
+        border-bottom: 4px solid #e5e7eb !important;
+        background-color: white !important;
+        color: #4b4b4b !important;
+        padding: 8px 16px !important;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        transition: all 0.1s !important;
     }
+    div.stButton > button:active {
+        border-bottom: 2px solid #e5e7eb !important;
+        transform: translateY(2px) !important;
+    }
+    
+    /* 4. 手機端間距壓縮 */
+    .block-container { padding-top: 2.5rem !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 【重點 2】Base64 音訊 (修復灰色播放器) ---
+# --- 【重點 2】音訊與結構邏輯 (維持 v2.9 穩定版) ---
+
 def get_audio_html(text):
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
     try:
         response = requests.get(tts_url)
         if response.status_code == 200:
             b64 = base64.b64encode(response.content).decode()
-            return f'<audio controls style="width:100%; height:40px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:45px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
-# --- 【重點 3】結構化拆解邏輯 ---
 def get_sentence_structure(text):
     raw_parts = re.split(r'([、。！？])', text.strip())
     structure = []
@@ -72,13 +91,33 @@ def get_sentence_structure(text):
         if part in ['、', '。', '！', '？']:
             structure.append({"type": "punc", "content": part})
         else:
-            # 支援空格拆分
-            tokens = [t for t in re.split(r'[ 　]+', part) if t] if " " in part or "　" in part else [t for t in re.split(f"({'|'.join(['は','が','を','に','へ','と','も','引','で','の','から','まで'])})", part) if t]
-            for token in tokens: structure.append({"type": "word", "content": token})
+            if " " in part or "　" in part:
+                tokens = [t for t in re.split(r'[ 　]+', part) if t]
+            else:
+                particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
+                pattern = f"({'|'.join(particles)})"
+                tokens = [t for t in re.split(pattern, part) if t]
+            for token in tokens:
+                structure.append({"type": "word", "content": token})
     return structure
+
+@st.cache_data(ttl=60)
+def load_data():
+    SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
+    GID = "1337973082"
+    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+    try:
+        df = pd.read_csv(url)
+        df.columns = [str(c).strip() for c in df.columns]
+        COL_UNIT, COL_CH, COL_JA, COL_CN = "單元", "章節", "日文原文", "中文意譯"
+        df = df.dropna(subset=[COL_JA, COL_CN])
+        return df, {"unit": COL_UNIT, "ch": COL_CH, "ja": COL_JA, "cn": COL_CN}
+    except: return None, None
 
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
+
+# --- 【重點 3】程式執行邏輯 ---
 
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 10
@@ -86,9 +125,8 @@ if 'q_idx' not in st.session_state:
 
 df, cols = load_data()
 
-# --- 【重點 4】主程式頁面邏輯 ---
 if df is not None:
-    # 側邊欄控制
+    # 側邊欄
     st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", unit_list)
@@ -96,28 +134,24 @@ if df is not None:
     sel_start_ch = st.sidebar.selectbox("2. 起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
     filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
     
-    # 題數控制
-    c1, c2 = st.sidebar.columns(2)
-    if c1.button("➖ 少一題"):
+    c_side1, c_side2 = st.sidebar.columns(2)
+    if c_side1.button("➖ 少題"):
         if st.session_state.num_q > 1: st.session_state.num_q -= 1; st.rerun()
-    if c2.button("➕ 多一題"):
+    if c_side2.button("➕ 多題"):
         if st.session_state.num_q < len(filtered_df): st.session_state.num_q += 1; st.rerun()
     
     preview_mode = st.sidebar.checkbox("📖 開啟預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # 狀態守衛：條件變動即重置
     cur_key = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
     if 'last_key' not in st.session_state or st.session_state.last_key != cur_key:
-        st.session_state.last_key = cur_key
-        st.session_state.q_idx = 0
+        st.session_state.last_key, st.session_state.q_idx = cur_key, 0
         reset_state(); st.rerun()
 
-    # --- 畫面渲染 ---
     if preview_mode:
-        st.subheader("📖 課文預習模式")
+        st.subheader("📖 預習清單")
         for item in quiz_list:
-            with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
+            with st.expander(f"{item[cols['cn']]}", expanded=True):
                 st.write(f"### {item[cols['ja']]}")
                 st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
     
@@ -132,7 +166,7 @@ if df is not None:
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # 答案框顯示
+        # --- 渲染卡片式答案框 ---
         current_ans_list = list(st.session_state.ans)
         html_content = '<div class="res-box">'
         for item in sentence_struct:
@@ -143,39 +177,35 @@ if df is not None:
         html_content += '</div>'
         st.markdown(html_content, unsafe_allow_html=True)
 
-        # 導航鍵 (4 欄)
+        # 功能導航鍵 (Duolingo 風格通常較緊湊)
         g1, g2, g3, g4 = st.columns(4)
-        if g1.button("⬅️上題"): 
-            if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
-        if g2.button("➡️下題"): 
-            if st.session_state.q_idx < len(quiz_list)-1: st.session_state.q_idx += 1; reset_state(); st.rerun()
-        if g3.button("🔄重填"): reset_state(); st.rerun()
-        if g4.button("⬅️退回"): 
+        g1.button("⬅️", on_click=lambda: (setattr(st.session_state, 'q_idx', max(0, st.session_state.q_idx-1)), reset_state()))
+        g2.button("➡️", on_click=lambda: (setattr(st.session_state, 'q_idx', min(len(quiz_list)-1, st.session_state.q_idx+1)), reset_state()))
+        g3.button("🔄", on_click=reset_state)
+        if g4.button("⬅️"):
             if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
 
         st.write("---")
-        # 按鈕區 (手機強制 3 欄併排)
-        cols_per_row = 3
-        for i in range(0, len(st.session_state.shuf), cols_per_row):
-            row_btns = st.columns(cols_per_row)
-            for j in range(cols_per_row):
-                idx = i + j
-                if idx < len(st.session_state.shuf) and idx not in st.session_state.used_history:
-                    if row_btns[j].button(st.session_state.shuf[idx], key=f"btn_{idx}"):
-                        st.session_state.ans.append(st.session_state.shuf[idx]); st.session_state.used_history.append(idx); st.rerun()
+        # --- 按鈕區：Duolingo 風格流式排列 ---
+        # 這裡不限制行數，讓它自然換行
+        row_btns = st.columns(len(st.session_state.shuf))
+        for idx, t in enumerate(st.session_state.shuf):
+            if idx not in st.session_state.used_history:
+                if row_btns[idx].button(t, key=f"btn_{idx}"):
+                    st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
-            if st.button("🔍 檢查答案", type="primary", use_container_width=True):
+            if st.button("CHECK 🔍", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: st.error("不對喔，再檢查一下！")
 
         if st.session_state.is_correct:
             st.success("正解！")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
-            if st.button("下一題 ➡️", type="primary", use_container_width=True): 
+            if st.button("CONTINUE ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
         st.header("🎊 練習完成！")
-        if st.button("🔄 重新開始", type="primary", use_container_width=True): 
+        if st.button("RESTART 🔄", type="primary", use_container_width=True): 
             st.session_state.q_idx = 0; reset_state(); st.rerun()
