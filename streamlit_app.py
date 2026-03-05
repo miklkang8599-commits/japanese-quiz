@@ -1,33 +1,44 @@
-"""
-================================================================
-【日文結構練習器 - 全功能標註修正版】
-核心重點：
-1. 聲音撥放優化：修正預習模式聲音顯示灰色問題，確保手機相容性。
-2. 原句結構拆解：保留標點符號進行分詞，確保不誤解原句語意。
-3. 錨定顯示：標點符號固定在原位，單字空格精確填入標點之間。
-================================================================
-"""
-
 import streamlit as st
 import pandas as pd
 import random
 import re
+import requests
+import base64
 
-# --- 重點 1：介面視覺優化 ---
+# ==========================================
+# 【重點 1】視覺優化與 CSS
+# ==========================================
 st.set_page_config(page_title="🇯🇵 日文結構練習器", layout="wide")
 
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; height: 3.2em; font-size: 16px !important; margin-bottom: 5px; }
     .res-box { display: flex; flex-wrap: wrap; gap: 8px; background-color: #f8fafc; padding: 20px; border-radius: 15px; border: 2px solid #e2e8f0; min-height: 100px; margin-bottom: 20px; align-items: center; }
-    .word-slot { min-width: 65px; height: 45px; border-bottom: 3px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #1e40af; font-weight: bold; padding: 0 5px; }
+    .word-slot { min-width: 65px; height: 45px; border-bottom: 3px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #1e40af; font-weight: bold; }
     .punc-display { font-size: 26px; color: #94a3b8; font-weight: bold; margin: 0 2px; }
-    /* 加強音訊撥放器顯示 */
-    audio { width: 100%; margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 重點 2：雲端資料設定 ---
+# ==========================================
+# 【重點 2】音訊處理函數 (核心修復)
+# ==========================================
+def get_audio_html(text):
+    """將 Google TTS 音訊轉為 Base64 嵌入 HTML，解決 iPhone 灰色不可點擊問題"""
+    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
+    try:
+        response = requests.get(tts_url)
+        if response.status_code == 200:
+            b64 = base64.b64encode(response.content).decode()
+            # 建立直接嵌入的音訊標籤
+            return f'<audio controls style="width:100%; height:40px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+        else:
+            return "音訊載入失敗"
+    except Exception as e:
+        return f"錯誤: {e}"
+
+# ==========================================
+# 【重點 3】資料讀取與結構拆解
+# ==========================================
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -42,7 +53,6 @@ def load_data():
         return df, {"unit": COL_UNIT, "ch": COL_CH, "ja": COL_JA, "cn": COL_CN}
     except: return None, None
 
-# --- 重點 3：結構拆解邏輯 ---
 def get_sentence_structure(text):
     raw_parts = re.split(r'([、。！？])', text.strip())
     structure = []
@@ -62,10 +72,7 @@ def get_sentence_structure(text):
     return structure
 
 def reset_state():
-    st.session_state.ans = []
-    st.session_state.used_history = []
-    st.session_state.shuf = []
-    st.session_state.is_correct = False
+    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 10
@@ -73,8 +80,11 @@ if 'q_idx' not in st.session_state:
 
 df, cols = load_data()
 
+# ==========================================
+# 【重點 4】UI 與功能邏輯
+# ==========================================
 if df is not None:
-    # 側邊欄互動區
+    # 側邊欄與題數加減 (保持原有功能)
     st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", unit_list)
@@ -91,19 +101,16 @@ if df is not None:
     preview_mode = st.sidebar.checkbox("📖 開啟預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # --- 重點 4：內容顯示渲染 ---
     if preview_mode:
         st.title("📖 課文預習")
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
                 text = item[cols['ja']]
                 st.write(f"### {text}")
-                # 優化：手動拼湊 TTS URL 並確保格式正確
-                audio_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
-                st.audio(audio_url, format="audio/mpeg")
+                # 使用 Base64 HTML 嵌入音訊，解決灰色按鈕問題
+                st.markdown(get_audio_html(text), unsafe_allow_html=True)
     
     elif st.session_state.q_idx < len(quiz_list):
-        # ... (測驗模式保持不變)
         q = quiz_list[st.session_state.q_idx]
         ja_raw = str(q[cols['ja']]).strip()
         sentence_struct = get_sentence_structure(ja_raw)
@@ -115,7 +122,7 @@ if df is not None:
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # 填充框顯示
+        # 渲染填充框
         current_ans_list = list(st.session_state.ans)
         html_content = '<div class="res-box">'
         for item in sentence_struct:
@@ -149,5 +156,8 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("🎊 正解！")
-            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
+            st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("下一題 ➡️", type="primary"): st.session_state.q_idx += 1; reset_state(); st.rerun()
+    else:
+        st.header("🎊 練習完成！")
+        if st.button("🔄 重新開始", type="primary"): st.session_state.q_idx = 0; reset_state(); st.rerun()
