@@ -7,15 +7,15 @@ import urllib.parse
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【自適應流動按鈕】：按鈕寬度根據單字長短自動調整，橫向自動換行，極致節省空間。
+# 1. 【自適應流動按鈕】：按鈕寬度根據單字長短自動調整，橫向自動換行，極致節省手機空間。
 # 2. 【核心音訊修復】：採用直接連結優化，解決 iPhone 播放條灰色 0:00 問題。
 # 3. 【填空式重組介面】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
-# 4. 【手勢操作優化】：針對手機直立設計，功能鍵緊湊橫排，適合單手操作。
+# 4. 【智慧章節排序】：章節選單支援 1, 2, 10 等智慧排序邏輯。
 # ==========================================
 
-st.set_page_config(page_title="🇯🇵 日文填空重組", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# 強力 CSS：實現 Flexbox 流動按鈕佈局
+# 強力 CSS：強制實現橫向流動佈局與按鈕長短自適應
 st.markdown("""
     <style>
     .block-container { padding: 0.5rem 0.8rem !important; }
@@ -28,35 +28,41 @@ st.markdown("""
         display: flex; flex-wrap: wrap; align-items: center;
     }
     .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 3px; min-width: 25px; text-align: center; }
-    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 3px; font-weight: bold; }
-    .punc-fixed { color: #64748b; font-weight: bold; font-size: 18px; padding: 0 2px; }
+    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
+    .punc-fixed { color: #64748b; font-weight: bold; font-size: 20px; padding: 0 2px; }
 
-    /* 控制按鈕橫排強制修復 */
-    [data-testid="column"] { flex: 1 1 0% !important; min-width: 0px !important; }
-    div[data-testid="stHorizontalBlock"] { flex-direction: row !important; display: flex !important; gap: 5px !important; }
+    /* 功能鍵橫排強制修復 */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 5px !important;
+    }
+    div[data-testid="column"] {
+        min-width: 0px !important;
+        flex: 1 1 0% !important;
+    }
 
-    /* 隱藏側邊欄多餘元件 */
-    [data-testid="stSidebar"] { width: 220px !important; }
-    
-    /* 原生按鈕高度與字體優化 */
+    /* 單字按鈕樣式優化：長短自適應 */
     div.stButton > button {
+        width: auto !important;
+        min-width: 50px !important;
         height: 2.2em !important;
-        padding: 0 12px !important;
+        padding: 0 10px !important;
         font-size: 15px !important;
-        width: auto !important; /* 讓按鈕寬度自適應內容 */
+        margin: 2px 0 !important;
     }
     
-    /* 讓按鈕在容器中並排 */
-    .button-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        justify-content: flex-start;
+    /* 移除按鈕外層容器的強制佔位 */
+    div.stButton {
+        display: inline-block !important;
+        margin-right: 5px !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 資料載入 ---
+# --- 資料讀取 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -72,11 +78,14 @@ def load_data():
         return df.dropna(subset=[cols['ja'], cols['cn']]), cols
     except: return None, None
 
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+
 def unified_parser(text):
     text = re.sub(r'[\s\u3000]', '', text)
-    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', '見つかりません', 'ございます']
+    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', '見つかりません']
     for i, w in enumerate(protected): text = text.replace(w, f"TOKEN{i}PROTECT")
-    particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', '對', 'で', 'の', 'か']
+    particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     raw_parts = re.split(pattern, text)
@@ -95,7 +104,6 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# --- 初始化 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 5
     reset_state()
@@ -103,10 +111,11 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("單元", u_list)
+    # 側邊欄
+    sel_unit = st.sidebar.selectbox("單元", sorted(df[cols['unit']].unique()))
     u_df = df[df[cols['unit']] == sel_unit]
-    sel_ch = st.sidebar.selectbox("章節", sorted(u_df[cols['ch']].unique().tolist()))
+    c_list = sorted(u_df[cols['ch']].unique().tolist(), key=natural_sort_key)
+    sel_ch = st.sidebar.selectbox("章節", c_list)
     quiz_list = u_df[u_df[cols['ch']] >= sel_ch].head(st.session_state.num_q).to_dict('records')
 
     if st.sidebar.checkbox("📖 預習模式"):
@@ -139,7 +148,7 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 功能鍵 (強迫橫排)
+        # 功能鍵 (橫排 4 個)
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
             if st.button("🔄"): reset_state(); st.rerun()
@@ -149,26 +158,23 @@ if df is not None:
         with c3:
             if st.button("⏮️"):
                 if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
-        with ctrl_c4 := c4:
+        with c4:
             if st.button("⏭️"):
                 if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
         
-        # --- 核心：長短自適應流動佈局 ---
-        # 這裡不使用 st.columns，直接渲染按鈕，CSS 會處理橫向排隊
-        st.markdown('<div class="button-container">', unsafe_allow_html=True)
-        # 使用原生按鈕但透過 CSS 移除其容器的塊級屬性
-        cols = st.columns(len(st.session_state.shuf)) # 使用極多列來模擬
+        # --- 核心優化：流動按鈕區域 ---
+        # 我們將按鈕放在一個容器中，並透過 CSS 強制橫向流動換行
+        st.write("點選按鈕組合句子：")
         for idx, word in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
-                # 為了避免 Streamlit 強制換行，我們使用單獨的 button 並在 CSS 中設為寬度自適應
                 if st.button(word, key=f"btn_{idx}"):
                     st.session_state.ans.append(word)
                     st.session_state.used_history.append(idx)
                     st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
+        st.write("")
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(words):
