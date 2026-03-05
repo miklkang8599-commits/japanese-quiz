@@ -3,22 +3,14 @@
 【技術演進與解決邏輯追蹤表】
 ----------------------------------------------------------------
 版本歷史與邏輯變更：
-- v1.0~v3.3 (舊方法)：
-  邏輯：使用 st.columns() + st.button()。
-  失敗原因：Streamlit 框架在螢幕寬度 < 768px 時，會透過底層 JS 強制將 
-  flex-direction 設為 column，導致手機直立時按鈕絕對會「一列一個」。
-  CSS 無論如何設定 !important 都難以完全覆蓋 React 組件的動態渲染。
-
-- v3.4~v3.7 (嘗試繞過)：
-  邏輯：嘗試建立大量窄欄位。
-  失敗原因：依然受限於框架對 st.columns 的定義，無法達成 Duolingo 的流式排版。
-
-- v3.8~v3.9 (最終獨立解法 - 目前版本)：
-  邏輯：完全捨棄 st.columns。
-  1. 渲染：使用 st.markdown() 直接噴出純 HTML <a> 標籤。
-  2. 排版：利用瀏覽器對標準 HTML <flex-wrap> 的原生支援，無視框架限制。
-  3. 通訊：點擊 HTML 連結觸發 URL query_params，由 Python 端攔截參數並執行邏輯。
-  優點：真正實現手機直立併排、緊貼，且單字長短自動適配空間。
+- v1.0~v3.7 (舊方法)：
+  邏輯：使用 st.columns()。手機直立時會因框架限制強制「一列一個」。
+- v3.8~v3.9.1 (最終獨立解法 - 目前版本)：
+  邏輯：完全捨棄 st.columns 排列單字池。
+  1. 渲染：使用純 HTML <a> 標籤。
+  2. 排版：利用瀏覽器對標準 HTML <flex-wrap> 的原生支援實現併排。
+  3. 通訊：點擊 HTML 連結觸發 URL query_params。
+  4. 修復(v3.9.1)：調整執行順序，確保 SessionState 初始化後才讀取參數。
 ----------------------------------------------------------------
 更新時間：2026-03-06
 設計重點：1.單字池置中 2.格位縮小 3.功能鍵置底 4.預習模式全展開
@@ -32,16 +24,14 @@ import re
 import requests
 import base64
 
-# --- 【重點 1】手機環境極致 CSS (精準鎖定 HTML 元素) ---
-st.set_page_config(page_title="🇯🇵 日文重組 v3.9", layout="wide")
+# --- 【重點 1】手機環境極致 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v3.9.1", layout="wide")
 
 st.markdown("""
     <style>
-    /* 移除頂部空白與邊距 */
     .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 答案區：極致扁平化 (格位小一點) */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 6px; 
         background-color: #f9fafb; padding: 12px; 
@@ -55,11 +45,10 @@ st.markdown("""
     }
     .punc-display { font-size: 20px; color: #94a3b8; font-weight: bold; }
 
-    /* 重點：自定義 HTML 按鈕 (真正解決緊貼與併排) */
     .btn-pool {
         display: flex;
         flex-wrap: wrap;
-        gap: 4px; /* 按鈕間隔比做小的按鈕還小 */
+        gap: 4px;
         justify-content: flex-start;
         padding: 10px 0;
     }
@@ -84,7 +73,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 【重點 2】音訊與結構處理 ---
+# --- 【重點 2】功能函數定義 ---
+
 def get_audio_html(text):
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
     try:
@@ -103,7 +93,6 @@ def get_sentence_structure(text):
         if part in ['、', '。', '！', '？']:
             structure.append({"type": "punc", "content": part})
         else:
-            # 支援手動空格優先
             if " " in part or "　" in part:
                 tokens = [t for t in re.split(r'[ 　]+', part) if t]
             else:
@@ -128,25 +117,34 @@ def load_data():
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 【重點 3】接收自定義 HTML 按鈕事件 ---
-params = st.query_params
-if "q_click" in params:
-    idx = int(params["q_click"])
-    if idx not in st.session_state.used_history:
-        st.session_state.ans.append(st.session_state.shuf[idx])
-        st.session_state.used_history.append(idx)
-        st.query_params.clear() # 清除參數，避免 rerun 時重複觸發
-        st.rerun()
+# --- 【重點 3】執行邏輯順序修正 ---
 
-# --- 【重點 4】主程式邏輯 ---
+# 1. 優先初始化 Session State (修復 AttributeError)
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 10
     reset_state()
 
+# 2. 接著處理來自 HTML 的 URL 點擊事件
+params = st.query_params
+if "q_click" in params:
+    idx_str = params["q_click"]
+    if idx_str.isdigit():
+        idx = int(idx_str)
+        # 確保 shuf 已經存在且索引有效
+        if 'shuf' in st.session_state and st.session_state.shuf:
+            if idx not in st.session_state.used_history:
+                st.session_state.ans.append(st.session_state.shuf[idx])
+                st.session_state.used_history.append(idx)
+                st.query_params.clear()
+                st.rerun()
+
+# 3. 讀取資料
 df, cols = load_data()
 
+# --- 【重點 4】主程式介面 ---
+
 if df is not None:
-    # 側邊欄控制
+    # 側邊欄設定
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元", unit_list)
     unit_df = df[df[cols['unit']].astype(str) == sel_unit]
@@ -159,6 +157,12 @@ if df is not None:
     
     preview_mode = st.sidebar.checkbox("📖 預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
+
+    # 狀態守衛：條件變動即重置
+    cur_key = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
+    if 'last_key' not in st.session_state or st.session_state.last_key != cur_key:
+        st.session_state.last_key, st.session_state.q_idx = cur_key, 0
+        reset_state(); st.rerun()
 
     if preview_mode:
         st.subheader("📖 預習清單")
@@ -174,12 +178,13 @@ if df is not None:
         sentence_struct = get_sentence_structure(ja_raw)
         word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
         
+        # 確保 shuf 在渲染按鈕前已經生成
         if not st.session_state.shuf:
             st.session_state.shuf = list(word_tokens); random.shuffle(st.session_state.shuf)
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # --- A. 答案展示區 ---
+        # 答案展示區
         current_ans_list = list(st.session_state.ans)
         html_ans = '<div class="res-box">'
         for item in sentence_struct:
@@ -192,19 +197,17 @@ if df is not None:
 
         st.write("---")
 
-        # --- B. 單字按鈕池 (位置對調：上移) ---
-        # 這裡不使用 st.columns，直接噴出 HTML Flexbox
+        # --- HTML 併排按鈕池 ---
         btn_html = '<div class="btn-pool">'
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
-                # 連結導向自己並帶上參數，實現「虛擬點擊」
                 btn_html += f'<a href="?q_click={idx}" target="_self" class="custom-btn">{t}</a>'
         btn_html += '</div>'
         st.markdown(btn_html, unsafe_allow_html=True)
 
         st.write(" ")
 
-        # --- C. 功能鍵 (位置對調：下移) ---
+        # --- 功能導航鍵 (置底) ---
         n1, n2, n3, n4 = st.columns(4)
         if n1.button("⏮上"): 
             if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
