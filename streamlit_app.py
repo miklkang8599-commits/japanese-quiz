@@ -1,14 +1,15 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v7.0 視覺美化最終版】
+【技術演進與邏輯追蹤表 - v7.1 操作引導強化版】
 ----------------------------------------------------------------
-1. 視覺翻新：
-   - 捨棄所有靠左對齊，實施「全域置中佈局」。
-   - 按鈕池透過 CSS Flexbox 實現對稱併排，模擬 Duolingo APP 質感。
-2. 空間平衡：
-   - 答案格位與按鈕間距精確調整，解決畫面偏向一邊的問題。
-3. 實體按鈕回歸：
-   - 為了確保點擊反應與側邊欄不失蹤，回歸原生按鈕但套用強化 CSS 樣式。
+1. 引導邏輯：
+   - 新增「區塊提示語」，明確區分單字選擇區與系統操作區。
+   - 強化視覺層次，讓使用者一眼看出操作流程：選詞 -> 檢查 -> 導航。
+2. 視覺修正：
+   - 維持全域置中 (max-width: 500px) 避免偏向一邊。
+   - 修正按鈕 3D 質感，提升「點擊」的視覺誘因。
+3. 側邊欄策略：
+   - 繼續維持 st.expander 作為「練習設定」，保證手機端 100% 可控。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -21,66 +22,65 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v7.0", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v7.1", layout="wide")
 
 st.markdown("""
     <style>
-    /* 全域字體與背景 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
-    html, body, [class*="css"]  { font-family: 'Noto Sans JP', sans-serif; }
+    html, body, [class*="css"] { font-family: 'Noto Sans JP', sans-serif; }
     
-    .block-container { padding: 1.5rem 1rem !important; max-width: 500px !important; margin: 0 auto !important; }
+    /* 置中容器與背景 */
+    .block-container { padding: 1rem 0.8rem !important; max-width: 480px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
 
-    /* 答案區：置中且帶有美感陰影 */
+    /* 答案格位 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 6px; 
-        background-color: #ffffff; padding: 15px; 
+        background-color: #ffffff; padding: 12px; 
         border-radius: 15px; border: 2px solid #e5e7eb; 
-        min-height: 55px; align-items: center; justify-content: center;
-        box-shadow: 0 4px 0 #e5e7eb; margin-bottom: 20px;
+        min-height: 50px; align-items: center; justify-content: center;
+        box-shadow: 0 4px 0 #e5e7eb; margin-bottom: 10px;
     }
     .word-slot { 
-        min-width: 35px; height: 30px; border-bottom: 2px solid #afafaf; 
+        min-width: 32px; height: 28px; border-bottom: 2px solid #afafaf; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 18px; color: #1cb0f6; font-weight: bold; margin: 0 3px;
+        font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 單字池：強制對稱併排 */
+    /* 單字池容器強制置中 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
         flex-direction: row !important; gap: 8px !important;
-        justify-content: center !important; /* 置中關鍵 */
+        justify-content: center !important;
     }
 
-    /* 按鈕樣式：Duolingo 3D 質感 */
+    /* 杜林風格按鈕 */
     div.stButton > button {
-        width: auto !important; min-width: 50px !important;
-        padding: 8px 16px !important; border-radius: 12px !important;
+        width: auto !important; min-width: 45px !important;
+        padding: 6px 14px !important; border-radius: 12px !important;
         font-size: 16px !important; font-weight: bold !important;
         background-color: white !important; color: #4b4b4b !important;
         border: 2px solid #e5e7eb !important;
         border-bottom: 4px solid #e5e7eb !important;
-        transition: all 0.1s;
-    }
-    div.stButton > button:active {
-        border-bottom: 2px solid #e5e7eb !important;
-        transform: translateY(2px);
     }
     
-    /* 系統操作按鈕：更精緻 */
-    .control-btns div.stButton > button {
-        padding: 4px 10px !important; font-size: 14px !important;
-        color: #afafaf !important; border-bottom: 2px solid #e5e7eb !important;
+    /* 功能提示文字樣式 */
+    .hint-text {
+        font-size: 13px; color: #afafaf; font-weight: bold;
+        margin: 10px 0 5px 0; text-align: center;
     }
 
-    /* 標題與說明 */
-    .stCaption { text-align: center; color: #afafaf; font-weight: bold; }
-    .stInfo { border-radius: 12px; background-color: #ddf4ff; color: #1899d6; border: none; text-align: center; }
+    /* 系統操作按鈕樣式 */
+    .control-btns div.stButton > button {
+        padding: 4px 8px !important; font-size: 13px !important;
+        color: #777 !important; border-bottom: 2px solid #e5e7eb !important;
+    }
+
+    .stInfo { border-radius: 12px; background-color: #ddf4ff; color: #1899d6; border: none; text-align: center; font-size: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 功能函數 ---
+# --- 2. 核心函數 ---
 @st.cache_data(ttl=60)
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA/export?format=csv&gid=1337973082"
@@ -115,7 +115,7 @@ def get_audio_html(text):
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 3. 初始化 ---
+# --- 3. 執行邏輯 ---
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'num_q' not in st.session_state: st.session_state.num_q = 10
 if 'ans' not in st.session_state: reset_state()
@@ -123,7 +123,7 @@ if 'ans' not in st.session_state: reset_state()
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄改為清爽版
+    # 設置選單
     with st.expander("⚙️ 練習設定", expanded=False):
         unit_list = sorted(df[cols['unit']].astype(str).unique())
         sel_unit = st.selectbox("選擇單元", unit_list)
@@ -165,7 +165,8 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字選擇池 (併排對稱)
+        # B. 單字池 (新增區塊提示)
+        st.markdown('<div class="hint-text">▼ 請點選單字按鈕</div>', unsafe_allow_html=True)
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
@@ -173,8 +174,9 @@ if df is not None:
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 系統操作 (精緻化)
+        # C. 系統操作 (新增區塊提示)
         st.write(" ")
+        st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
         st.markdown('<div class="control-btns">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
         if nav_cols[0].button("⬅ 退回"):
@@ -187,16 +189,16 @@ if df is not None:
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # D. 檢查與結果 (底部置中)
+        # D. 檢查答案
         st.divider()
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("不對喔！再想一想吧 💡")
+                else: st.error("順序不對喔！再想一想吧 💡")
 
         if st.session_state.is_correct:
             st.success("正解！太厲害了 🎉")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
-            if st.button("繼續 ➡️", type="primary", use_container_width=True): 
+            if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
