@@ -1,16 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - 最終版】
+【技術演進與邏輯追蹤表 - v4.1 穩定版】
 ----------------------------------------------------------------
-- v3.9 (舊方法回顧)：使用 URL 參數。
-  失敗原因：點擊會導致網頁重整，側邊欄消失，且 iPhone 依然可能攔截排版。
+- v4.0 錯誤回報：TypeError (clicked_idx 為 None)。
+  失敗原因：Component 初始化時會回傳 None，直接索引會導致崩潰。
 
-- v4.0 (最終解法 - 特區嵌入法)：
-  邏輯：使用 streamlit.components.v1 嵌入一個獨立的 HTML 環境。
-  1. 隔離環境：HTML 特區內的 CSS 完全由我們掌控，Streamlit 無權干涉併排。
-  2. 雙向通訊：使用 postMessage 技術。點擊單字即時傳送資料回 Python，
-     完全不需要重新整理網頁 (Rerun 不等於 Reload)，側邊欄功能保證不消失。
-  3. 視覺極限：按鈕間距、格位大小達到像素級微調。
+- v4.1 修復邏輯：
+  1. 型別檢查：加入 isinstance(clicked_idx, int) 判斷，確保只有點擊發生時才更新。
+  2. 雙向通訊：維持 postMessage 零跳轉技術，不重整網頁，保住側邊欄。
+  3. 強制併排：HTML 特區內建 CSS 鎖死併排規則，無視 Streamlit 框架限制。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -24,15 +22,17 @@ import requests
 import base64
 
 # --- 設定頁面 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v4.0", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v4.1", layout="wide")
 
-# 移除 Streamlit 預設邊距 (僅針對容器)
+# 強制優化手機導航併排
 st.markdown("""
     <style>
     .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
-    /* 讓功能鍵在手機上併排的唯一 CSS 修復 */
+    /* 功能鍵強制併排 */
     [data-testid="column"] { width: 24% !important; flex: 1 1 24% !important; min-width: 24% !important; }
+    /* 調整說明字體 */
+    .stCaption { font-size: 14px !important; margin-bottom: 5px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -81,22 +81,23 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄 (這版側邊欄絕對不會再不見)
+    # 側邊欄
+    st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元選擇", unit_list)
     unit_df = df[df[cols['unit']].astype(str) == sel_unit]
     sel_start_ch = st.sidebar.selectbox("起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
     filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
     
-    c_s1, c_s2 = st.sidebar.columns(2)
-    if c_s1.button("➖ 少題"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
-    if c_s2.button("➕ 多題"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
+    c_side1, c_side2 = st.sidebar.columns(2)
+    if c_side1.button("➖ 少題"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
+    if c_side2.button("➕ 多題"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
     
     preview_mode = st.sidebar.checkbox("📖 開啟預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if preview_mode:
-        st.subheader("📖 全展開預習清單")
+        st.subheader("📖 預習清單")
         for i, item in enumerate(quiz_list):
             st.markdown(f"**{i+1}. {item[cols['cn']]}**")
             st.write(item[cols['ja']])
@@ -114,17 +115,21 @@ if df is not None:
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # --- A. 答案展示區 ---
+        # --- A. 答案展示區 (HTML 渲染) ---
         current_ans_list = list(st.session_state.ans)
-        html_ans = f"""
-        <div style="display:flex; flex-wrap:wrap; gap:6px; background:#f9fafb; padding:12px; border-radius:10px; border:1.5px solid #e5e7eb; min-height:60px; align-items:center; margin-bottom:10px;">
-            {" ".join([f'<div style="min-width:30px; height:28px; border-bottom:2px solid #cbd5e1; display:flex; align-items:center; justify-content:center; font-size:16px; color:#1cb0f6; font-weight:bold; margin:0 2px;">{current_ans_list.pop(0) if current_ans_list else ""}</div>' if s['type']=='word' else f'<span style="font-size:18px; color:#94a3b8; font-weight:bold;">{s["content"]}</span>' for s in sentence_struct])}
-        </div>
-        """
-        st.markdown(html_ans, unsafe_allow_html=True)
+        slots_html = ""
+        for s in sentence_struct:
+            if s['type'] == 'word':
+                val = current_ans_list.pop(0) if current_ans_list else ""
+                slots_html += f'<div style="min-width:30px; height:28px; border-bottom:2px solid #cbd5e1; display:flex; align-items:center; justify-content:center; font-size:16px; color:#1cb0f6; font-weight:bold; margin:0 4px;">{val}</div>'
+            else:
+                slots_html += f'<span style="font-size:18px; color:#94a3b8; font-weight:bold;">{s["content"]}</span>'
+        
+        st.markdown(f'<div style="display:flex; flex-wrap:wrap; gap:6px; background:#f9fafb; padding:12px; border-radius:10px; border:1.5px solid #e5e7eb; min-height:60px; align-items:center;">{slots_html}</div>', unsafe_allow_html=True)
 
-        # --- B. 核心突破：HTML Component 併排按鈕池 ---
-        # 這裡使用原生 JavaScript 通訊，解決手機併排問題
+        st.write(" ")
+
+        # --- B. 單字池：HTML Component (修復 TypeError) ---
         btn_items = "".join([
             f'<button onclick="send({idx})" style="background:white; border:1px solid #e5e7eb; border-bottom:3px solid #e5e7eb; border-radius:8px; padding:8px 14px; margin:3px; font-size:16px; font-weight:bold; color:#4b4b4b; cursor:pointer;">{t}</button>'
             for idx, t in enumerate(st.session_state.shuf) if idx not in st.session_state.used_history
@@ -132,8 +137,8 @@ if df is not None:
 
         html_code = f"""
         <html>
-            <body style="margin:0; padding:0; background:transparent; font-family:sans-serif;">
-                <div id="pool" style="display:flex; flex-wrap:wrap; gap:2px; justify-content:flex-start;">
+            <body style="margin:0; padding:0; background:transparent;">
+                <div id="pool" style="display:flex; flex-wrap:wrap; gap:2px;">
                     {btn_items}
                 </div>
                 <script>
@@ -144,16 +149,17 @@ if df is not None:
             </body>
         </html>
         """
-        # 嵌入特區，偵測點擊
-        clicked_idx = components.html(html_code, height=150, scrolling=False)
+        # 取得 Component 回傳值
+        clicked_idx = components.html(html_code, height=140)
         
-        # 處理點擊邏輯 (不需要 URL 重整)
-        if clicked_idx is not None:
-            st.session_state.ans.append(st.session_state.shuf[clicked_idx])
-            st.session_state.used_history.append(clicked_idx)
-            st.rerun()
+        # 【核心修復】：嚴格檢查 clicked_idx 是否為整數，避免 TypeError
+        if clicked_idx is not None and isinstance(clicked_idx, int):
+            if clicked_idx not in st.session_state.used_history:
+                st.session_state.ans.append(st.session_state.shuf[clicked_idx])
+                st.session_state.used_history.append(clicked_idx)
+                st.rerun()
 
-        # --- C. 功能鍵 (置底且確保併排) ---
+        # --- C. 功能導航 (置底) ---
         st.write("---")
         n1, n2, n3, n4 = st.columns(4)
         if n1.button("⏮上"): 
