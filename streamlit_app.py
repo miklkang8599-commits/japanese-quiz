@@ -2,21 +2,24 @@ import streamlit as st
 import pandas as pd
 import random
 import re
-import urllib.parse
+import requests
+import base64
+from io import BytesIO
 
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【同步對齊技術】：確保「口」空格數量與下方「按鈕」數量絕對一致。
-# 2. 【長詞保護機制】：保護「ありがとうございます」、「どのくらい」等長詞不被切碎。
-# 3. 【強效語音引擎】：採用 Google TTS 穩定格式，修復 iPhone 播放條灰色問題。
-# 4. 【填空式介面】：預先顯示標點符號，其餘顯示為待填空格，直觀掌握結構。
-# 5. 【預設 5 題】：啟動自動設定為 5 題，並支援智慧章節排序。
+# 1. 【核心音訊修復】：採用 Base64 內嵌技術，確保 Chrome 與 iPhone 都能播放。
+# 2. 【填空式重組介面】：答題區預顯標點符號與「口」空格，直觀掌握句構。
+# 3. 【同步對齊技術】：確保「口」空格數量與下方按鈕數量絕對一致。
+# 4. 【長詞保護機制】：保護「ありがとうございます」等常用語不被切碎。
+# 5. 【直讀式預習模式】：內容全展開，每題配備獨立音訊播放器。
+# 6. 【智慧排序與題數】：支援 1, 2, 10 排序，預設 5 題練習。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# CSS 優化：加大行高避免重疊
+# CSS 優化
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 10px; height: 3.2em; font-size: 18px !important; margin-bottom: 8px; }
@@ -34,7 +37,36 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 資料讀取 ---
+# --- 核心：Base64 音訊處理函數 ---
+def get_audio_b64(text):
+    """
+    將 Google TTS 音訊下載並轉換為 Base64，確保跨平台相容性
+    """
+    try:
+        tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(tts_url, headers=headers)
+        if r.status_code == 200:
+            return base64.b64encode(r.content).decode()
+    except:
+        return None
+    return None
+
+def play_audio(text, auto=False):
+    """生成 HTML5 內嵌播放器"""
+    b64_str = get_audio_b64(text)
+    if b64_str:
+        autoplay = "autoplay" if auto else ""
+        html_code = f"""
+            <audio controls {autoplay} style="width:100%; height:40px;">
+                <source src="data:audio/mp3;base64,{b64_str}" type="audio/mp3">
+            </audio>
+        """
+        st.components.v1.html(html_code, height=50)
+    else:
+        st.warning("語音加載失敗")
+
+# --- 資料讀取與處理 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -54,26 +86,14 @@ def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
 def unified_parser(text):
-    """
-    強化的分詞引擎：
-    先保護特定長詞，再進行助詞與標點符號的切分。
-    """
     text = re.sub(r'[\s\u3000]', '', text)
-    # 加入所有可能被切碎的長單字
-    protected = [
-        'ありがとうございます', 'ありがとうございました', 'すみません', 
-        'どのくらい', 'どのぐらい', 'どの出口', '見つかりません', 'ございます'
-    ]
+    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', 'ございます']
     for i, w in enumerate(protected):
         text = text.replace(w, f"TOKEN{i}PROTECT")
-    
-    # 助詞與標點符號
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
-    
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     raw_parts = re.split(pattern, text)
-    
     tokens = []
     for p in raw_parts:
         if not p: continue
@@ -81,15 +101,8 @@ def unified_parser(text):
         for i, w in enumerate(protected):
             if f"TOKEN{i}PROTECT" in p:
                 tokens.append(w); is_p = True; break
-        if not is_p:
-            tokens.append(p)
+        if not is_p: tokens.append(p)
     return tokens
-
-def get_audio_html(text):
-    """修復音訊條灰色問題：使用更穩定的 Google TTS 參數"""
-    enc = urllib.parse.quote(text)
-    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}"
-    return tts_url
 
 def reset_state():
     st.session_state.ans = []
@@ -106,15 +119,15 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄
+    st.sidebar.header("⚙️ 練習設定")
     u_list = sorted(df[cols['unit']].unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
     c_list = sorted(u_df[cols['ch']].unique().tolist(), key=natural_sort_key)
     sel_start_ch = st.sidebar.selectbox("2. 起始章節", c_list)
     
-    s_idx = c_list.index(sel_start_ch)
-    filtered_df = u_df[u_df[cols['ch']].isin(c_list[s_idx:])]
+    start_idx = c_list.index(sel_start_ch)
+    filtered_df = u_df[u_df[cols['ch']].isin(c_list[start_idx:])]
     max_q = len(filtered_df)
 
     st.sidebar.write(f"3. 練習題數: {st.session_state.num_q}")
@@ -132,19 +145,18 @@ if df is not None:
     if 'lkey' not in st.session_state or st.session_state.lkey != f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}":
         st.session_state.lkey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"; st.session_state.q_idx = 0; reset_state(); st.rerun()
 
-    # 主畫面
     if st.sidebar.checkbox("📖 預習模式"):
-        st.header("📖 課文預習 (全展開)")
+        st.header("📖 課文預習")
         for item in quiz_list:
             ja_text = str(item[cols['ja']]).strip()
             st.markdown(f"""
                 <div class="preview-card">
                     <div style='font-size:12px; color:#94a3b8;'>章節：{item[cols['ch']]}</div>
-                    <div style='font-size:16px; color:#475569; margin-bottom:4px;'>{item[cols['cn']]}</div>
+                    <div style='font-size:16px; color:#475569;'>{item[cols['cn']]}</div>
                     <div style='font-size:20px; color:#1d4ed8; font-weight:bold;'>{ja_text}</div>
                 </div>
             """, unsafe_allow_html=True)
-            st.audio(get_audio_html(ja_text))
+            play_audio(ja_text)
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
@@ -154,8 +166,7 @@ if df is not None:
         words = [t for t in all_t if t not in puncs]
         
         if not st.session_state.shuf:
-            st.session_state.shuf = list(words)
-            random.shuffle(st.session_state.shuf)
+            st.session_state.shuf = list(words); random.shuffle(st.session_state.shuf)
 
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
@@ -203,7 +214,7 @@ if df is not None:
         if st.session_state.is_correct:
             st.success("🎊 正解！")
             st.markdown(f"### {ja_raw}")
-            st.audio(get_audio_html(ja_raw))
+            play_audio(ja_raw, auto=True)
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
