@@ -40,11 +40,13 @@ def load_data():
 def word_splitter(text):
     """
     強化版分詞器：
-    確實切割助詞、標點符號，並保護常用長詞。
+    1. 確實切割助詞、標點符號。
+    2. 過濾所有多餘的空白字元，防止出現空格按鈕。
     """
-    text = text.strip()
+    # 先把字串內部的所有空格（半形與全形）徹底移除
+    text = re.sub(r'[\s\u3000]', '', text)
     
-    # [1] 保護長單字：防止被誤切
+    # 保護長單字清單
     protected = [
         'ありがとうございます', 'ありがとうございました', 
         'すみません', 'ごめんなさい', 'おはようございます',
@@ -53,25 +55,26 @@ def word_splitter(text):
     for w in protected:
         text = text.replace(w, f" __{w}__ ")
 
-    # [2] 定義拆分點：助詞與標點
+    # 定義拆分點：助詞與標點
     particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで', 'です', 'ます']
     punctuations = ['、', '。', '！', '？']
     
-    # 建立正則表達式 ( ) 括號會保留分割符號
+    # 建立正則表達式
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     
-    # [3] 執行拆分
+    # 執行拆分
     raw_parts = re.split(pattern, text)
     
-    # [4] 清理結果
+    # 嚴格清理結果：過濾掉空字串及只有空白的片段
     tokens = []
     for p in raw_parts:
-        p = p.strip()
-        if not p: continue
-        if p.startswith("__") and p.endswith("__"):
-            tokens.append(p.replace("__", ""))
+        p_clean = p.strip()
+        if not p_clean: continue # 如果是空的就跳過
+        
+        if p_clean.startswith("__") and p_clean.endswith("__"):
+            tokens.append(p_clean.replace("__", ""))
         else:
-            tokens.append(p)
+            tokens.append(p_clean)
     return tokens
 
 def reset_state():
@@ -99,7 +102,6 @@ if df is not None:
     filtered_df = u_df[u_df[cols['ch']] >= sel_start_ch]
     max_q = len(filtered_df)
 
-    # 題數按鈕
     st.sidebar.write(f"3. 練習題數： **{st.session_state.num_q}**")
     c1, c2 = st.sidebar.columns(2)
     with c1:
@@ -109,9 +111,9 @@ if df is not None:
         if st.button("➕ 多一題"):
             if st.session_state.num_q < max_q: st.session_state.num_q += 1; st.rerun()
 
+    if st.session_state.num_q > max_q: st.session_state.num_q = max_q
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # 切換章節或單元時重置進度
     ckey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
     if 'lkey' not in st.session_state or st.session_state.lkey != ckey:
         st.session_state.lkey = ckey
@@ -137,11 +139,9 @@ if df is not None:
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # 拼湊區
         user_ans = "".join(st.session_state.ans)
         st.markdown(f'<div class="res-box">{user_ans if user_ans else "請依序點選下方按鈕..."}</div>', unsafe_allow_html=True)
 
-        # 功能鍵
         ctrl_c1, ctrl_c2, ctrl_c3 = st.columns([1, 1, 1])
         with ctrl_c1:
             if st.button("🔄重填"): reset_state(); st.rerun()
@@ -154,7 +154,6 @@ if df is not None:
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
-        # 題目按鈕 (iPhone 2 欄排列最佳)
         b_cols = st.columns(2) 
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.used_history:
@@ -164,23 +163,21 @@ if df is not None:
                         st.session_state.used_history.append(i)
                         st.rerun()
 
-        # 檢查答案
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                # 移除空格比對
-                if "".join(st.session_state.ans) == ja_raw.replace(" ",""):
+                # 移除原句中的空格後比對
+                clean_target = re.sub(r'[\s\u3000]', '', ja_raw)
+                if "".join(st.session_state.ans) == clean_target:
                     st.session_state.is_correct = True; st.rerun()
                 else: 
-                    st.error("順序不對喔！檢查看看助詞或標點符號。")
+                    st.error("順序不對喔！")
 
         if st.session_state.is_correct:
             st.success(f"🎊 正解！")
             st.markdown(f"### {ja_raw}")
             st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
-                st.session_state.q_idx += 1
-                reset_state()
-                st.rerun()
+                st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
         st.header("🎊 練習完成！")
         if st.button("🔄 重新開始", type="primary", use_container_width=True): 
