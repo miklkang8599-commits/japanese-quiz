@@ -1,15 +1,16 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v6.0 原生暴力破解版】
+【技術演進與邏輯追蹤表 - v6.1 穩定併排版】
 ----------------------------------------------------------------
-- v4.8~v5.0 (黑科技失敗分析)：
-  URL 參數重整在手機端會導致 Session 斷裂，造成點擊無效、格位不更新。
-
-- v6.0 (本次解法 - 核心容器重寫)：
-  1. 穩定通訊：改回原生 st.button，點擊事件直接與 Python 勾連，保證 100% 成功。
-  2. 暴力併排：利用 CSS 穿透技術，強行將原本垂直堆疊的 Column 容器 
-     轉化為 inline-flex 或 grid。
-  3. 完美細節：答案格位縮小，按鈕緊貼（間距 2px），位置對調（按鈕在中，功能在底）。
+- 為什麼回歸原生：
+  實測證明 URL 參數（?pick=x）在手機瀏覽器點擊時會觸發全頁面 Reload，
+  這會導致「側邊欄自動收合」且 Session 狀態不穩定（按鈕沒反應）。
+  
+- v6.1 解決邏輯：
+  1. 穩定性：使用原生 st.button，保證側邊欄與資料狀態 100% 穩定。
+  2. 併排：透過 CSS 選取器 [data-testid="column"]，強行取消手機端的 
+     width: 100% 限制，實現真正的併排。
+  3. 佈局：按鈕池在中，功能鍵在底。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -22,55 +23,51 @@ import requests
 import base64
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.0", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v6.1", layout="wide")
 
-# --- 2. 深度 CSS 滲透 (真正解決手機直立斷行) ---
+# --- 2. 核心 CSS 深度覆蓋 (針對手機端 Column 併排) ---
 st.markdown("""
     <style>
-    /* 核心：強制讓所有 HorizontalBlock (st.columns 的父層) 在手機端不准斷行 */
+    /* 強制側邊欄不被重置後的空白擠壓 */
+    .block-container { padding: 1rem 0.3rem !important; }
+    [data-testid="stHeader"] { display: none; }
+
+    /* 解決手機直立「一按鈕一列」的核心代碼 */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: wrap !important;
-        gap: 2px !important;
-        align-items: flex-start !important;
+        flex-direction: row !important; /* 強制橫向 */
+        flex-wrap: wrap !important;     /* 允許換行 */
+        gap: 3px !important;
     }
-
-    /* 核心：讓每個 Column 寬度歸零，隨內容展開 */
     [data-testid="column"] {
-        flex: 0 1 auto !important;
-        width: auto !important;
+        width: auto !important;         /* 關鍵：取消手機端 100% 寬度 */
+        flex: 0 1 auto !important;      /* 讓寬度隨內容收縮 */
         min-width: 0px !important;
-        padding: 0px !important;
     }
 
-    /* 核心：原生按鈕視覺壓縮，確保緊貼 */
+    /* 按鈕樣式：緊湊且立體 */
     div.stButton > button {
         width: auto !important;
-        padding: 6px 12px !important;
+        padding: 5px 12px !important;
         border-radius: 8px !important;
         border: 1px solid #e5e7eb !important;
-        border-bottom: 3.5px solid #e5e7eb !important;
+        border-bottom: 3px solid #e5e7eb !important;
         font-size: 16px !important;
         font-weight: bold !important;
-        margin: 0px !important;
     }
 
-    /* 答案格位微縮化 */
+    /* 答案格位縮小 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #f9fafb; padding: 10px; 
+        background-color: #f8fafc; padding: 8px; 
         border-radius: 10px; border: 1.5px solid #e5e7eb; 
-        min-height: 55px; align-items: center; margin-bottom: 15px;
+        min-height: 50px; align-items: center; margin-bottom: 10px;
     }
     .word-slot { 
         min-width: 32px; height: 26px; border-bottom: 2px solid #1cb0f6; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 18px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
+        font-size: 17px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
-
-    .block-container { padding: 0.5rem 0.3rem !important; }
-    [data-testid="stHeader"] { display: none; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,7 +82,7 @@ def load_data():
     except: return None, None
 
 def get_sentence_structure(text):
-    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
+    pts = ['は','が','を','に','へ','と','も','進','で','の','から','まで']
     raw = re.split(r'([、。！？])', text.strip())
     struct = []
     for p in raw:
@@ -112,7 +109,7 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# --- 4. 初始化 ---
+# --- 4. 邏輯初始化 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
 if 'num_q' not in st.session_state:
@@ -123,7 +120,7 @@ if 'ans' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄
+    # 側邊欄 (絕對不會失蹤，因為沒有全頁重整)
     st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元選擇", unit_list)
@@ -153,7 +150,7 @@ if df is not None:
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # A. 答案區
+        # A. 答案展示區
         curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
@@ -167,7 +164,7 @@ if df is not None:
 
         st.write("---")
 
-        # B. 單字池 (原生按鈕，暴力併排)
+        # B. 單字池 (實體按鈕併排)
         num_shuf = len(st.session_state.shuf)
         word_cols = st.columns(num_shuf if num_shuf > 0 else 1)
         for idx, t in enumerate(st.session_state.shuf):
@@ -177,14 +174,12 @@ if df is not None:
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 功能鍵 (底部)
+        # C. 功能鍵 (置底併排)
         st.write(" ")
         n1, n2, n3, n4 = st.columns(4)
-        if n1.button("⏮上"): 
-            st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
-        if n2.button("⏭下"): 
-            st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
-        if n3.button("🔄重"): reset_state(); st.rerun()
+        n1.button("⏮上", on_click=lambda: (st.session_state.update({"q_idx": max(0, st.session_state.q_idx-1)}), reset_state()))
+        n2.button("⏭下", on_click=lambda: (st.session_state.update({"q_idx": min(len(quiz_list)-1, st.session_state.q_idx+1)}), reset_state()))
+        n3.button("🔄重", on_click=reset_state)
         if n4.button("⬅退"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
@@ -200,3 +195,4 @@ if df is not None:
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("CONTINUE ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
+              
