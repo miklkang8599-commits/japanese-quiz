@@ -1,14 +1,11 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v6.7 標示強化版】
+【技術演進與邏輯追蹤表 - v6.8 佈局優化版】
 ----------------------------------------------------------------
-1. 標示優化：
-   - 功能鍵改為全文字標註，解決「縮寫看不懂」的問題。
-   - 順序維持：退回 -> 重填 -> 上題 -> 下題。
-2. 佈局安全：
-   - 功能鍵置於單字池上方，確保檢查結果在螢幕底部不被遮擋。
-3. 側邊欄替代：
-   - 持續使用頂部 st.expander 作為設定區，保證手機 100% 可見。
+1. 佈局調整：依照要求，將「系統操作」功能鍵移回單字池下方。
+2. 標示清晰：維持「退回、重填、上題、下題」全文字標示。
+3. 螢幕适配：壓縮所有垂直 Margin，確保檢查結果在手機端能正常顯現。
+4. 側邊欄替代：持續使用頂部 Expander 確保設定功能不遺失。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,43 +17,43 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與極致壓縮 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.7", layout="wide")
+# --- 1. 頁面配置與核心壓縮 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v6.8", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. 答案格位：縮小高度以騰出空間 */
+    /* 1. 答案區：保持扁平 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 8px; 
-        border-radius: 10px; border: 1.5px solid #e2e8f0; 
+        background-color: #ffffff; padding: 10px; 
+        border-radius: 12px; border: 1.5px solid #e2e8f0; 
         min-height: 42px; align-items: center; margin-bottom: 5px;
     }
     .word-slot { 
-        min-width: 25px; height: 24px; border-bottom: 2px solid #3b82f6; 
+        min-width: 28px; height: 24px; border-bottom: 2px solid #3b82f6; 
         display: flex; align-items: center; justify-content: center; 
         font-size: 15px; color: #2563eb; font-weight: bold; margin: 0 1px;
     }
 
-    /* 2. 強制按鈕池與功能鍵併排 */
+    /* 2. 核心：強制單字池與功能鍵在手機端橫向併排 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
-        flex-direction: row !important; gap: 3px !important;
+        flex-direction: row !important; gap: 4px !important;
     }
 
-    /* 3. 按鈕細節：扁平化以節省垂直像素 */
+    /* 3. 按鈕視覺：極致扁平化 */
     div.stButton > button {
-        width: auto !important; min-width: 30px !important;
-        padding: 3px 8px !important; border-radius: 6px !important;
-        font-size: 13px !important; font-weight: bold !important;
-        border-bottom: 2px solid #e5e7eb !important;
+        width: auto !important; min-width: 35px !important;
+        padding: 4px 10px !important; border-radius: 8px !important;
+        font-size: 14px !important; font-weight: bold !important;
+        border-bottom: 2.5px solid #e5e7eb !important;
+        margin-bottom: 2px !important;
     }
     
-    /* 4. 強調功能鍵區塊 */
-    .nav-label { font-size: 12px; color: #64748b; margin-bottom: 2px; }
-    
-    /* 隱藏原生 Header 並壓縮邊距 */
-    .block-container { padding: 0.4rem 0.3rem !important; }
+    /* 4. 微調標籤文字 */
+    .section-label { font-size: 12px; color: #94a3b8; margin: 5px 0 2px 0; }
+
+    .block-container { padding: 0.5rem 0.4rem !important; }
     [data-testid="stHeader"] { display: none; }
     </style>
 """, unsafe_allow_html=True)
@@ -72,7 +69,7 @@ def load_data():
     except: return None, None
 
 def get_sentence_structure(text):
-    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
+    pts = ['は','が','を','に','へ','推','與','進','度','と','も','で','の','から','まで']
     raw = re.split(r'([、。！？])', text.strip())
     struct = []
     for p in raw:
@@ -89,7 +86,7 @@ def get_audio_html(text):
         res = requests.get(tts_url)
         if res.status_code == 200:
             b64 = base64.b64encode(res.content).decode()
-            return f'<audio controls style="width:100%; height:30px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:32px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
@@ -107,8 +104,8 @@ if 'ans' not in st.session_state: reset_state()
 df, cols = load_data()
 
 if df is not None:
-    # --- 頂部設定區 ---
-    with st.expander("⚙️ 練習設定 (單元與預習)", expanded=False):
+    # --- 頂部設定選單 ---
+    with st.expander("⚙️ 練習設定", expanded=False):
         unit_list = sorted(df[cols['unit']].astype(str).unique())
         sel_unit = st.selectbox("單元選擇", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
@@ -135,20 +132,30 @@ if df is not None:
             random.seed(st.session_state.q_idx)
             random.shuffle(st.session_state.shuf)
 
+        st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
+
         # A. 答案區
-        st.markdown(f"**💡 {cn_text}**")
         curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
-            if s['type'] == 'punc': ans_html += f'<span style="color:#94a3b8; font-weight:bold;">{s["content"]}</span>'
+            if s['type'] == 'punc': ans_html += f'<span style="color:#94a3b8;">{s["content"]}</span>'
             else:
                 val = curr_ans_copy.pop(0) if curr_ans_copy else ""
                 ans_html += f'<div class="word-slot">{val}</div>'
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 功能控制鍵 (標示清楚化)
-        st.markdown('<p class="nav-label">系統操作：</p>', unsafe_allow_html=True)
+        # B. 單字選擇池 (在上方)
+        st.markdown('<p class="section-label">▼ 選擇單字：</p>', unsafe_allow_html=True)
+        for idx, t in enumerate(st.session_state.shuf):
+            if idx not in st.session_state.used_history:
+                if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
+                    st.session_state.ans.append(t)
+                    st.session_state.used_history.append(idx)
+                    st.rerun()
+
+        # C. 系統操作鍵 (回到單字池下方)
+        st.markdown('<p class="section-label">▼ 系統操作：</p>', unsafe_allow_html=True)
         nav_cols = st.columns(4)
         if nav_cols[0].button("⬅退回"):
             if st.session_state.used_history:
@@ -159,19 +166,10 @@ if df is not None:
         if nav_cols[3].button("⏭下題"): 
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
 
-        # C. 單字池
-        st.markdown('<p class="nav-label">選擇單字：</p>', unsafe_allow_html=True)
-        for idx, t in enumerate(st.session_state.shuf):
-            if idx not in st.session_state.used_history:
-                if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
-                    st.session_state.ans.append(t)
-                    st.session_state.used_history.append(idx)
-                    st.rerun()
-
-        # D. 檢查與結果 (置底)
-        st.write(" ")
+        # D. 檢查答案與結果顯示 (置底)
+        st.write("---")
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
-            if st.button("🔍 點擊檢查結果", type="primary", use_container_width=True):
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("順序不對喔！")
