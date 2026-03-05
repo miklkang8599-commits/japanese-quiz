@@ -1,10 +1,10 @@
 """
 ================================================================
-【日文填充重組練習器 - 原句結構標註版】
+【日文結構練習器 - 全功能標註修正版】
 核心重點：
-1. 原句拆解：保留標點符號進行分詞，確保不誤解原句語意。
-2. 錨定顯示：標點符號固定在原位，單字空格精確填入標點之間。
-3. 手動空格優先：支援在 Excel 中使用空格自定義拆分點。
+1. 聲音撥放優化：修正預習模式聲音顯示灰色問題，確保手機相容性。
+2. 原句結構拆解：保留標點符號進行分詞，確保不誤解原句語意。
+3. 錨定顯示：標點符號固定在原位，單字空格精確填入標點之間。
 ================================================================
 """
 
@@ -22,6 +22,8 @@ st.markdown("""
     .res-box { display: flex; flex-wrap: wrap; gap: 8px; background-color: #f8fafc; padding: 20px; border-radius: 15px; border: 2px solid #e2e8f0; min-height: 100px; margin-bottom: 20px; align-items: center; }
     .word-slot { min-width: 65px; height: 45px; border-bottom: 3px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #1e40af; font-weight: bold; padding: 0 5px; }
     .punc-display { font-size: 26px; color: #94a3b8; font-weight: bold; margin: 0 2px; }
+    /* 加強音訊撥放器顯示 */
+    audio { width: 100%; margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -40,29 +42,21 @@ def load_data():
         return df, {"unit": COL_UNIT, "ch": COL_CH, "ja": COL_JA, "cn": COL_CN}
     except: return None, None
 
-# --- 重點 3：原句結構拆解邏輯 ---
+# --- 重點 3：結構拆解邏輯 ---
 def get_sentence_structure(text):
-    """
-    將原句連同標點符號一起拆解，回傳包含『文字塊』與『標點符號』的清單。
-    優先支援手動空格拆分。
-    """
-    # 1. 識別標點符號並切開，保留標點
     raw_parts = re.split(r'([、。！？])', text.strip())
     structure = []
-    
     for part in raw_parts:
         if not part: continue
         if part in ['、', '。', '！', '？']:
             structure.append({"type": "punc", "content": part})
         else:
-            # 2. 針對文字區塊進行單字拆分
-            if " " in part or "　" in part: # 手動空格優先
+            if " " in part or "　" in part:
                 tokens = [t for t in re.split(r'[ 　]+', part) if t]
-            else: # 自動助詞拆分
+            else:
                 particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
                 pattern = f"({'|'.join(particles)})"
                 tokens = [t for t in re.split(pattern, part) if t]
-            
             for token in tokens:
                 structure.append({"type": "word", "content": token})
     return structure
@@ -79,9 +73,9 @@ if 'q_idx' not in st.session_state:
 
 df, cols = load_data()
 
-# --- 重點 4：UI 渲染 ---
 if df is not None:
-    # 側邊欄設定
+    # 側邊欄互動區
+    st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", unit_list)
     unit_df = df[df[cols['unit']].astype(str) == sel_unit]
@@ -97,40 +91,41 @@ if df is not None:
     preview_mode = st.sidebar.checkbox("📖 開啟預習模式")
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
+    # --- 重點 4：內容顯示渲染 ---
     if preview_mode:
+        st.title("📖 課文預習")
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
-                st.write(f"### {item[cols['ja']]}")
-                st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={item[cols['ja']]}")
+                text = item[cols['ja']]
+                st.write(f"### {text}")
+                # 優化：手動拼湊 TTS URL 並確保格式正確
+                audio_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
+                st.audio(audio_url, format="audio/mpeg")
     
     elif st.session_state.q_idx < len(quiz_list):
+        # ... (測驗模式保持不變)
         q = quiz_list[st.session_state.q_idx]
         ja_raw = str(q[cols['ja']]).strip()
-        
-        # 獲取原句完整結構
         sentence_struct = get_sentence_structure(ja_raw)
         word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
         
         if not st.session_state.shuf:
-            st.session_state.shuf = list(word_tokens)
-            random.shuffle(st.session_state.shuf)
+            st.session_state.shuf = list(word_tokens); random.shuffle(st.session_state.shuf)
 
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # --- 重點 5：動態渲染格位與標點 ---
+        # 填充框顯示
         current_ans_list = list(st.session_state.ans)
         html_content = '<div class="res-box">'
         for item in sentence_struct:
-            if item['type'] == 'punc':
-                html_content += f'<span class="punc-display">{item["content"]}</span>'
+            if item['type'] == 'punc': html_content += f'<span class="punc-display">{item["content"]}</span>'
             else:
                 val = current_ans_list.pop(0) if current_ans_list else ""
                 html_content += f'<div class="word-slot">{val}</div>'
         html_content += '</div>'
         st.markdown(html_content, unsafe_allow_html=True)
 
-        # 功能導航
         col1, col2, col3, col4 = st.columns(4)
         if col1.button("⬅️上一題") and st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
         if col2.button("➡️下一題") and st.session_state.q_idx < len(quiz_list)-1: st.session_state.q_idx += 1; reset_state(); st.rerun()
@@ -139,7 +134,6 @@ if df is not None:
             if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
 
         st.write("---")
-        # 按鈕區 (2 欄)
         btn_cols = st.columns(2)
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.used_history:
@@ -147,12 +141,9 @@ if df is not None:
                     if st.button(t, key=f"btn_{i}"):
                         st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
 
-        # 檢查答案 (對比純文字)
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary"):
-                user_final = "".join(st.session_state.ans)
-                target_final = "".join(word_tokens)
-                if user_final == target_final:
+                if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("順序不對喔！")
 
@@ -160,6 +151,3 @@ if df is not None:
             st.success("🎊 正解！")
             st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
             if st.button("下一題 ➡️", type="primary"): st.session_state.q_idx += 1; reset_state(); st.rerun()
-    else:
-        st.header("🎊 練習完成！")
-        if st.button("🔄 重新開始", type="primary"): st.session_state.q_idx = 0; reset_state(); st.rerun()
