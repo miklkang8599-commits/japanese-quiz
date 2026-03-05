@@ -1,16 +1,16 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v6.1 穩定併排版】
+【技術演進與邏輯追蹤表 - v6.2 終極穩定版】
 ----------------------------------------------------------------
-- 為什麼回歸原生：
-  實測證明 URL 參數（?pick=x）在手機瀏覽器點擊時會觸發全頁面 Reload，
-  這會導致「側邊欄自動收合」且 Session 狀態不穩定（按鈕沒反應）。
-  
-- v6.1 解決邏輯：
-  1. 穩定性：使用原生 st.button，保證側邊欄與資料狀態 100% 穩定。
-  2. 併排：透過 CSS 選取器 [data-testid="column"]，強行取消手機端的 
-     width: 100% 限制，實現真正的併排。
-  3. 佈局：按鈕池在中，功能鍵在底。
+- v6.1 (失敗原因)：
+  CSS 權重過高 (!important) 導致側邊欄與其他 UI 元素寬度異常，
+  且按鈕可能因寬度計算錯誤而消失。
+
+- v6.2 (本次解法 - 容器隔離法)：
+  1. 針對性佈局：不再使用 st.columns(12) 這種騙框架的方法，
+     改用單一容器內的 st.button，並透過 CSS 局部修正。
+  2. 側邊欄安全：縮減 CSS 影響範圍，確保不影響左側選單。
+  3. 實體按鈕：維持原生按鈕，點擊必反應，側邊欄不消失。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -23,51 +23,44 @@ import requests
 import base64
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.1", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v6.2", layout="wide")
 
-# --- 2. 核心 CSS 深度覆蓋 (針對手機端 Column 併排) ---
+# --- 2. 局部 CSS (僅針對答案區與按鈕池，不影響側邊欄) ---
 st.markdown("""
     <style>
-    /* 強制側邊欄不被重置後的空白擠壓 */
-    .block-container { padding: 1rem 0.3rem !important; }
-    [data-testid="stHeader"] { display: none; }
-
-    /* 解決手機直立「一按鈕一列」的核心代碼 */
-    [data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important; /* 強制橫向 */
-        flex-wrap: wrap !important;     /* 允許換行 */
-        gap: 3px !important;
-    }
-    [data-testid="column"] {
-        width: auto !important;         /* 關鍵：取消手機端 100% 寬度 */
-        flex: 0 1 auto !important;      /* 讓寬度隨內容收縮 */
-        min-width: 0px !important;
-    }
-
-    /* 按鈕樣式：緊湊且立體 */
-    div.stButton > button {
-        width: auto !important;
-        padding: 5px 12px !important;
-        border-radius: 8px !important;
-        border: 1px solid #e5e7eb !important;
-        border-bottom: 3px solid #e5e7eb !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
-    }
-
-    /* 答案格位縮小 */
+    /* 答案區展示：格位小一點 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #f8fafc; padding: 8px; 
-        border-radius: 10px; border: 1.5px solid #e5e7eb; 
-        min-height: 50px; align-items: center; margin-bottom: 10px;
+        background-color: #ffffff; padding: 10px; 
+        border-radius: 12px; border: 1.5px solid #e5e7eb; 
+        min-height: 50px; align-items: center; margin-bottom: 12px;
     }
     .word-slot { 
-        min-width: 32px; height: 26px; border-bottom: 2px solid #1cb0f6; 
+        min-width: 30px; height: 26px; border-bottom: 2px solid #1cb0f6; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 17px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
+        font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
+    .punc-display { font-size: 18px; color: #94a3b8; font-weight: bold; }
+
+    /* 核心：按鈕池容器 CSS (強制手機端併排) */
+    .st-emotion-cache-12w0qpk { /* 這是 Streamlit 橫向容器的底層類名 */
+        display: flex !important;
+        flex-wrap: wrap !important;
+        flex-direction: row !important;
+    }
+    
+    div.stButton > button {
+        border-radius: 8px !important;
+        border: 1px solid #e5e7eb !important;
+        border-bottom: 3.5px solid #e5e7eb !important;
+        padding: 5px 12px !important;
+        font-size: 15px !important;
+        font-weight: bold !important;
+        width: auto !important; /* 讓按鈕不要變成長條 */
+    }
+
+    /* 頂部壓縮 */
+    .block-container { padding-top: 1rem !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -82,7 +75,7 @@ def load_data():
     except: return None, None
 
 def get_sentence_structure(text):
-    pts = ['は','が','を','に','へ','と','も','進','で','の','から','まで']
+    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
     raw = re.split(r'([、。！？])', text.strip())
     struct = []
     for p in raw:
@@ -99,7 +92,7 @@ def get_audio_html(text):
         res = requests.get(tts_url)
         if res.status_code == 200:
             b64 = base64.b64encode(res.content).decode()
-            return f'<audio controls style="width:100%; height:38px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
@@ -109,7 +102,7 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# --- 4. 邏輯初始化 ---
+# --- 4. 初始化 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
 if 'num_q' not in st.session_state:
@@ -120,7 +113,7 @@ if 'ans' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄 (絕對不會失蹤，因為沒有全頁重整)
+    # 側邊欄
     st.sidebar.header("⚙️ 練習設定")
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元選擇", unit_list)
@@ -132,8 +125,7 @@ if df is not None:
 
     if preview_mode:
         for i, item in enumerate(quiz_list):
-            st.markdown(f"**{i+1}. {item[cols['cn']]}**")
-            st.write(item[cols['ja']])
+            st.write(f"**{i+1}. {item[cols['cn']]}**\n{item[cols['ja']]}")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
             st.divider()
     
@@ -155,31 +147,32 @@ if df is not None:
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
             if s['type'] == 'punc': 
-                ans_html += f'<span style="font-size:18px; color:#94a3b8; font-weight:bold;">{s["content"]}</span>'
+                ans_html += f'<span class="punc-display">{s["content"]}</span>'
             else:
                 val = curr_ans_copy.pop(0) if curr_ans_copy else ""
                 ans_html += f'<div class="word-slot">{val}</div>'
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        st.write("---")
-
-        # B. 單字池 (實體按鈕併排)
-        num_shuf = len(st.session_state.shuf)
-        word_cols = st.columns(num_shuf if num_shuf > 0 else 1)
+        # B. 單字池 (改用原生橫向按鈕排列，不使用 st.columns)
+        st.write("單字選擇：")
+        # 關鍵：這裡我們不再建立一個一個的小 Column，直接讓按鈕排在一起
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
-                if word_cols[idx].button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
+                # 每個按鈕是一個獨立的 st.button，但我們在 CSS 中讓它們併排
+                if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t)
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 功能鍵 (置底併排)
-        st.write(" ")
+        # C. 功能鍵 (底部)
+        st.write("---")
         n1, n2, n3, n4 = st.columns(4)
-        n1.button("⏮上", on_click=lambda: (st.session_state.update({"q_idx": max(0, st.session_state.q_idx-1)}), reset_state()))
-        n2.button("⏭下", on_click=lambda: (st.session_state.update({"q_idx": min(len(quiz_list)-1, st.session_state.q_idx+1)}), reset_state()))
-        n3.button("🔄重", on_click=reset_state)
+        if n1.button("⏮上"): 
+            st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
+        if n2.button("⏭下"): 
+            st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
+        if n3.button("🔄重"): reset_state(); st.rerun()
         if n4.button("⬅退"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
@@ -188,11 +181,10 @@ if df is not None:
             if st.button("🔍 CHECK", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: st.error("順序不對！")
 
         if st.session_state.is_correct:
             st.success("正解！")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("CONTINUE ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
-              
