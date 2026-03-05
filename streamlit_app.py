@@ -4,7 +4,7 @@ import random
 import re
 
 # 設定網頁標題
-st.set_page_config(page_title="🇯🇵 日文全單字重組練習", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文全單字重組 (終極修復版)", layout="wide")
 
 # 手機版 UI 優化
 st.markdown("""
@@ -19,7 +19,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 資料讀取設定 ---
+# --- 1. 設定 Google Sheets 資訊 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -40,44 +40,48 @@ def load_data():
 def word_splitter(text):
     """
     終極分詞器：
-    1. 暴力移除所有類型的空白字元。
-    2. 保護長詞，精準切割助詞。
-    3. 最終過濾，確保無空按鈕。
+    1. 移除所有空白。
+    2. 使用『不含空格』的標記來保護長詞。
+    3. 確實切割助詞與標點符號。
     """
-    # [步驟 1] 使用正則移除「所有」空白，包含全形、半形、換行、定位符等
-    text = re.sub(r'\s+', '', text)
-    text = text.replace('\u3000', '') # 額外處理全形空格
+    # 徹底移除所有空白
+    text = re.sub(r'[\s\u3000]', '', text)
     
-    # [步驟 2] 保護長單字
+    # 保護長詞（使用不會出現在日文中的英文字元作為純標記，且不含空格）
     protected = [
         'ありがとうございます', 'ありがとうございました', 
         'どのくらい', 'どのぐらい', 'すみません', 'ごめんなさい', 
         'おはようございます', '失礼します', 'お疲れ様です'
     ]
-    for w in protected:
-        text = text.replace(w, f" __{w}__ ")
+    for i, w in enumerate(protected):
+        text = text.replace(w, f"TOKEN{i}PROTECT")
 
-    # [步驟 3] 定義拆分點
+    # 定義拆分點：助詞與標點
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     
-    # [步驟 4] 執行拆分
+    # 執行拆分
     raw_parts = re.split(pattern, text)
     
-    # [步驟 5] 終極過濾：長度必須大於 0 且不能是純空白
+    # 清理與還原
     tokens = []
     for p in raw_parts:
-        # 移除任何殘留的極小空格
-        p_clean = p.strip().replace(' ', '').replace('\u3000', '')
+        if not p: continue
         
-        if not p_clean: # 如果是空的，絕對不要
-            continue
-            
-        if p_clean.startswith("__") and p_clean.endswith("__"):
-            tokens.append(p_clean.replace("__", ""))
-        else:
-            tokens.append(p_clean)
+        # 還原保護的長詞
+        is_protected = False
+        for i, w in enumerate(protected):
+            if f"TOKEN{i}PROTECT" in p:
+                tokens.append(w)
+                is_protected = True
+                break
+        
+        if not is_protected:
+            # 再次確保沒有殘留的空格
+            p_clean = p.strip()
+            if p_clean:
+                tokens.append(p_clean)
             
     return tokens
 
@@ -95,17 +99,16 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    st.sidebar.header("⚙️ 練習設定")
+    # 側邊欄
     u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
+    sel_unit = st.sidebar.selectbox("選擇單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
     c_list = sorted(u_df[cols['ch']].unique())
-    sel_start_ch = st.sidebar.selectbox("2. 起始章節編號", c_list)
-    
+    sel_start_ch = st.sidebar.selectbox("起始章節", c_list)
     filtered_df = u_df[u_df[cols['ch']] >= sel_start_ch]
     max_q = len(filtered_df)
 
-    st.sidebar.write(f"3. 練習題數： **{st.session_state.num_q}**")
+    st.sidebar.write(f"練習題數： **{st.session_state.num_q}**")
     c1, c2 = st.sidebar.columns(2)
     with c1:
         if st.button("➖ 少一題"):
@@ -116,9 +119,8 @@ if df is not None:
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    ckey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
-    if 'lkey' not in st.session_state or st.session_state.lkey != ckey:
-        st.session_state.lkey = ckey
+    if 'lkey' not in st.session_state or st.session_state.lkey != f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}":
+        st.session_state.lkey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
         st.session_state.q_idx = 0
         reset_state()
         st.rerun()
@@ -156,9 +158,9 @@ if df is not None:
 
         st.write("---")
         b_cols = st.columns(2) 
-        # 這裡也加一道保險：如果 t 為空，就不渲染按鈕
+        # 第三重過濾：確保渲染按鈕時，內容絕對不是空的
         for i, t in enumerate(st.session_state.shuf):
-            if t and i not in st.session_state.used_history:
+            if t and t.strip() and i not in st.session_state.used_history:
                 with b_cols[i % 2]:
                     if st.button(t, key=f"btn_{i}"):
                         st.session_state.ans.append(t)
@@ -167,11 +169,10 @@ if df is not None:
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                clean_target = re.sub(r'\s+', '', ja_raw).replace('\u3000', '')
+                clean_target = re.sub(r'[\s\u3000]', '', ja_raw)
                 if "".join(st.session_state.ans) == clean_target:
                     st.session_state.is_correct = True; st.rerun()
-                else: 
-                    st.error("順序不對喔！")
+                else: st.error("順序不對喔！")
 
         if st.session_state.is_correct:
             st.success(f"🎊 正解！")
