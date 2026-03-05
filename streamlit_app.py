@@ -8,20 +8,20 @@ import urllib.parse
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
 # 1. 【核心音訊修復】：採用直接連結優化，修復 0:00 無法播放問題。
-# 2. 【HTML 流動按鈕】：完全捨棄 st.button 排版，改用 CSS Flexbox，按鈕自動橫向換行。
-# 3. 【手機端窄版優化】：縮小所有元素尺寸，確保不需滑動即可看到多個按鈕。
-# 4. 【填空式邏輯】：答題區「口」空格數量與按鈕數量精確同步。
+# 2. 【強制流動按鈕】：使用特殊 CSS 覆寫，確保手機直立時按鈕依然橫向並排。
+# 3. 【手機端空間節省】：移除所有多餘邊距，將控制鍵緊湊化，減少滑動需求。
+# 4. 【填空式邏輯】：答題區預顯標點符號與「口」，精確同步按鈕數量。
 # ==========================================
 
-st.set_page_config(page_title="🇯🇵 日文填空重組", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# 強力 CSS：強制按鈕橫向排列，不再一列一個
+# 強力 CSS：強制繞過 Streamlit 的手機端堆疊限制
 st.markdown("""
     <style>
-    /* 縮小全域間距 */
-    .block-container { padding: 0.5rem 0.5rem !important; }
+    /* 移除 Streamlit 預設的大邊距 */
+    .block-container { padding: 0.5rem 1rem !important; }
     
-    /* 答題區 */
+    /* 答題區：輕量化 */
     .res-box {
         font-size: 18px; color: #1e40af; background-color: #f0f9ff; 
         padding: 8px; border-radius: 8px; border: 1px solid #bae6fd; 
@@ -32,22 +32,27 @@ st.markdown("""
     .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 3px; font-weight: bold; }
     .punc-fixed { color: #64748b; font-weight: bold; font-size: 18px; padding: 0 2px; }
 
-    /* 【關鍵】讓按鈕橫向排隊的 CSS */
-    .flex-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 10px;
+    /* 【關鍵】強制按鈕在手機上不堆疊，橫向並排 */
+    [data-testid="column"] {
+        flex: 1 1 0% !important;
+        min-width: 0px !important;
     }
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        display: flex !important;
+        gap: 5px !important;
+    }
+
+    /* 隱藏側邊欄多餘元件 */
+    [data-testid="stSidebar"] { width: 220px !important; }
     
-    /* 側邊欄縮小 */
-    [data-testid="stSidebar"] { width: 200px !important; }
-    
-    /* 隱藏原生按鈕的多餘白邊 */
+    /* 按鈕字體調整 */
     div.stButton > button {
         height: 2.2em !important;
-        padding: 0 10px !important;
+        padding: 0 5px !important;
         font-size: 14px !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -70,7 +75,7 @@ def load_data():
 
 def unified_parser(text):
     text = re.sub(r'[\s\u3000]', '', text)
-    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', 'ございます']
+    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', '見つかりません']
     for i, w in enumerate(protected): text = text.replace(w, f"TOKEN{i}PROTECT")
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
@@ -113,7 +118,6 @@ if df is not None:
         for item in quiz_list:
             ja = str(item[cols['ja']]).strip()
             st.markdown(f"<div style='background:white; padding:8px; border-radius:5px; margin-bottom:5px; border-left:3px solid #3b82f6; font-size:14px;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
-            # 使用更穩定的音訊播放格式
             enc = urllib.parse.quote(ja)
             st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}")
     
@@ -140,34 +144,33 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 功能鍵 (改用小型按鈕橫排)
-        c1, c2, c3, c4 = st.columns([1,1,1,1])
-        with c1: 
+        # 功能鍵 (強制橫向並排 4 個)
+        ctrl_cols = st.columns(4)
+        with ctrl_cols[0]: 
             if st.button("🔄"): reset_state(); st.rerun()
-        with c2:
+        with ctrl_cols[1]:
             if st.button("⬅️"):
                 if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        with c3:
+        with ctrl_cols[2]:
             if st.button("⏮️"):
                 if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
-        with c4:
+        with ctrl_cols[3]:
             if st.button("⏭️"):
                 if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
         
-        # --- 核心優化：橫向流動按鈕區 ---
-        # 我們手動建立多個 column 來模仿橫向排列，防止一列一個
-        n_cols = 3 # 手機直立最適合一行 3 個
+        # --- 核心：按鈕區域強制 3 欄排列，不論手機是否直立 ---
+        n_cols = 3 
         for i in range(0, len(st.session_state.shuf), n_cols):
-            cols = st.columns(n_cols)
+            row_cols = st.columns(n_cols)
             for j in range(n_cols):
                 idx = i + j
                 if idx < len(st.session_state.shuf):
                     if idx not in st.session_state.used_history:
                         word = st.session_state.shuf[idx]
-                        with cols[j]:
-                            if st.button(word, key=f"btn_{idx}"):
+                        with row_cols[j]:
+                            if st.button(word, key=f"btn_{idx}", use_container_width=True):
                                 st.session_state.ans.append(word)
                                 st.session_state.used_history.append(idx)
                                 st.rerun()
