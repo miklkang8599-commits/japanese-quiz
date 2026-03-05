@@ -6,29 +6,28 @@ import re
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【填空式重組介面】：答題區預先顯示標點符號與空白框，直觀掌握句子結構。
-# 2. 【標點免輸入】：標點符號固定在正確位置，學生只需專注於單字與助詞排序。
-# 3. 【智慧分詞系統】：精準切分單字與助詞，並保護常用長詞（如：ありがとうございます）。
-# 4. 【響應式優化】：針對手機設計 2 欄大按鈕，操作流暢。
-# 5. 【智慧排序】：支援「數字+字母」的章節排序。
-# 6. 【功能列全開】：重填、退回一步、上一題、跳過下一題功能完整。
+# 1. 【同步對齊技術】：確保「口」空格數量與下方「按鈕」數量絕對一致。
+# 2. 【填空式重組介面】：答題區預先顯示標點符號，其餘顯示為待填空格。
+# 3. 【標點免輸入】：標點符號固定在正確位置，學生只需專注於單字與助詞排序。
+# 4. 【長詞保護機制】：保護常用長詞（如：ありがとうございます）不被切碎。
+# 5. 【響應式優化】：針對手機設計 2 欄大按鈕，並加大答題區間距避免重疊。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# CSS 優化：定義空白框與標點樣式
+# CSS 優化：定義樣式，確保在手機上不重疊
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 10px; height: 3.2em; font-size: 18px !important; margin-bottom: 8px; }
     .res-box {
         font-size: 26px; color: #1e40af; background-color: #eff6ff; 
         padding: 20px; border-radius: 12px; border: 2px dashed #60a5fa; 
-        min-height: 100px; margin-bottom: 15px; line-height: 2.0; letter-spacing: 2px;
+        min-height: 100px; margin-bottom: 15px; line-height: 2.2; letter-spacing: 2px;
         display: flex; flex-wrap: wrap; align-items: center;
     }
-    .slot-empty { color: #bfdbfe; border-bottom: 2px solid #bfdbfe; margin: 0 5px; min-width: 40px; text-align: center; }
-    .slot-filled { color: #1e40af; border-bottom: 2px solid #60a5fa; margin: 0 5px; }
-    .punc-fixed { color: #1e3a8a; font-weight: bold; font-size: 30px; padding: 0 5px; }
+    .slot-empty { color: #bfdbfe; border-bottom: 2px solid #bfdbfe; margin: 0 8px; min-width: 45px; text-align: center; font-weight: bold; }
+    .slot-filled { color: #1e40af; border-bottom: 2px solid #60a5fa; margin: 0 8px; padding: 0 4px; }
+    .punc-fixed { color: #1e3a8a; font-weight: bold; font-size: 32px; padding: 0 5px; }
     [data-testid="stSidebar"] .stButton>button { height: 2.5em; font-size: 16px !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -52,27 +51,24 @@ def load_data():
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
-def word_splitter(text, include_punc=False):
+def unified_parser(text):
     """
-    分詞器：
-    include_punc=False 用於生成按鈕（不含標點）
-    include_punc=True 用於建立答題區結構（含標點）
+    統一分詞引擎：同時負責按鈕生成與結構建立
     """
     text = re.sub(r'[\s\u3000]', '', text)
     protected = ['ありがとうございます', 'ありがとうございました', 'どのくらい', 'どのぐらい', 'すみません', 'ごめんなさい', 'おはようございます', '失礼します', 'お疲れ様です']
     for i, w in enumerate(protected):
         text = text.replace(w, f"TOKEN{i}PROTECT")
     
+    # 助詞清單
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
+    # 標點清單
     punctuations = ['、', '。', '！', '？']
     
-    if include_punc:
-        pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
-    else:
-        pattern = f"({'|'.join(re.escape(p) for p in particles)})"
-        text = re.sub(r'[、。！？]', '', text) # 生成按鈕時徹底移除標點
-
+    # 使用捕捉括號以便保留分割符
+    pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     raw_parts = re.split(pattern, text)
+    
     tokens = []
     for p in raw_parts:
         if not p: continue
@@ -81,8 +77,7 @@ def word_splitter(text, include_punc=False):
             if f"TOKEN{i}PROTECT" in p:
                 tokens.append(w); is_protected = True; break
         if not is_protected:
-            p_clean = p.strip()
-            if p_clean: tokens.append(p_clean)
+            tokens.append(p)
     return tokens
 
 def reset_state():
@@ -137,26 +132,30 @@ if df is not None:
         q = quiz_list[st.session_state.q_idx]
         ja_raw = str(q[cols['ja']]).strip()
         
-        # 建立按鈕 (不含標點)
+        # 取得所有組件
+        all_tokens = unified_parser(ja_raw)
+        
+        # 區分「固定標點」與「待填單字」
+        punc_list = ['、', '。', '！', '？']
+        words_only = [t for t in all_tokens if t not in punc_list]
+        
         if not st.session_state.shuf:
-            st.session_state.shuf = word_splitter(ja_raw, include_punc=False)
+            st.session_state.shuf = list(words_only)
             random.shuffle(st.session_state.shuf)
 
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # --- 填空式重組核心邏輯 ---
-        full_structure = word_splitter(ja_raw, include_punc=True)
+        # --- 顯示區邏輯：嚴格對齊 ---
         user_ans_temp = list(st.session_state.ans)
         display_html = '<div class="res-box">'
-        
-        for part in full_structure:
-            if part in ['、', '。', '！', '？']:
-                display_html += f'<span class="punc-fixed">{part}</span>'
+        for t in all_tokens:
+            if t in punc_list:
+                display_html += f'<span class="punc-fixed">{t}</span>'
             else:
                 if user_ans_temp:
-                    word = user_ans_temp.pop(0)
-                    display_html += f'<span class="slot-filled">{word}</span>'
+                    val = user_ans_temp.pop(0)
+                    display_html += f'<span class="slot-filled">{val}</span>'
                 else:
                     display_html += f'<span class="slot-empty">口</span>'
         display_html += '</div>'
@@ -174,19 +173,20 @@ if df is not None:
                 if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
         with ctrl[3]:
             if st.button("⏭️下題"):
-                st.session_state.q_idx += 1; reset_state(); st.rerun()
+                if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
+        # 按鈕區：這裏的按鈕數量絕對等於上面的「口」數量
         b_cols = st.columns(2) 
         for i, t in enumerate(st.session_state.shuf):
-            if t and i not in st.session_state.used_history:
+            if i not in st.session_state.used_history:
                 with b_cols[i % 2]:
                     if st.button(t, key=f"btn_{i}"):
                         st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                clean_target = re.sub(r'[、。！？\s]', '', ja_raw)
+                clean_target = "".join(words_only)
                 if "".join(st.session_state.ans) == clean_target:
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("順序不對喔！")
