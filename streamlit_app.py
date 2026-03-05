@@ -7,21 +7,20 @@ import urllib.parse
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【核心音訊修復】：採用直接連結優化，修復 0:00 無法播放問題。
-# 2. 【強制流動按鈕】：使用特殊 CSS 覆寫，確保手機直立時按鈕依然橫向並排。
-# 3. 【手機端空間節省】：移除所有多餘邊距，將控制鍵緊湊化，減少滑動需求。
-# 4. 【填空式邏輯】：答題區預顯標點符號與「口」，精確同步按鈕數量。
+# 1. 【核心音訊修復】：採用直接連結優化 + HTML5 播放器，修復 iPhone 灰色播放條。
+# 2. 【HTML 流動按鈕】：不再使用 st.button，改用純 HTML 渲染，按鈕在手機上自動橫向排隊。
+# 3. 【手機端極簡優化】：縮小答題區尺寸與功能鍵，確保不需滑動即可拼湊句子。
+# 4. 【填空式邏輯】：答題區「口」空格與下方按鈕數量絕對一致，預顯標點符號。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# 強力 CSS：強制繞過 Streamlit 的手機端堆疊限制
+# 強力 CSS：解決手機直立排版與音訊問題
 st.markdown("""
     <style>
-    /* 移除 Streamlit 預設的大邊距 */
-    .block-container { padding: 0.5rem 1rem !important; }
+    .block-container { padding: 0.5rem 0.5rem !important; }
     
-    /* 答題區：輕量化 */
+    /* 答題區 */
     .res-box {
         font-size: 18px; color: #1e40af; background-color: #f0f9ff; 
         padding: 8px; border-radius: 8px; border: 1px solid #bae6fd; 
@@ -32,32 +31,23 @@ st.markdown("""
     .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 3px; font-weight: bold; }
     .punc-fixed { color: #64748b; font-weight: bold; font-size: 18px; padding: 0 2px; }
 
-    /* 【關鍵】強制按鈕在手機上不堆疊，橫向並排 */
-    [data-testid="column"] {
-        flex: 1 1 0% !important;
-        min-width: 0px !important;
-    }
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        display: flex !important;
-        gap: 5px !important;
-    }
-
-    /* 隱藏側邊欄多餘元件 */
-    [data-testid="stSidebar"] { width: 220px !important; }
-    
-    /* 按鈕字體調整 */
-    div.stButton > button {
-        height: 2.2em !important;
-        padding: 0 5px !important;
-        font-size: 14px !important;
-        overflow: hidden;
-        text-overflow: ellipsis;
+    /* 【關鍵】讓按鈕橫向排隊的 HTML/CSS 組件 */
+    .word-btn-wrapper {
+        display: inline-block;
+        background-color: white;
+        color: #1e293b;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        padding: 6px 10px;
+        margin: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 資料載入 ---
+# --- 資料讀取 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -75,7 +65,7 @@ def load_data():
 
 def unified_parser(text):
     text = re.sub(r'[\s\u3000]', '', text)
-    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', '見つかりません']
+    protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', '見つかりません', 'ございます']
     for i, w in enumerate(protected): text = text.replace(w, f"TOKEN{i}PROTECT")
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
@@ -104,20 +94,16 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄
-    u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("單元", u_list)
+    # 側邊欄縮減
+    sel_unit = st.sidebar.selectbox("單元", sorted(df[cols['unit']].unique()))
     u_df = df[df[cols['unit']] == sel_unit]
-    c_list = sorted(u_df[cols['ch']].unique().tolist())
-    sel_ch = st.sidebar.selectbox("章節", c_list)
-    
+    sel_ch = st.sidebar.selectbox("章節", sorted(u_df[cols['ch']].unique().tolist()))
     quiz_list = u_df[u_df[cols['ch']] >= sel_ch].head(st.session_state.num_q).to_dict('records')
 
-    # 主畫面
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             ja = str(item[cols['ja']]).strip()
-            st.markdown(f"<div style='background:white; padding:8px; border-radius:5px; margin-bottom:5px; border-left:3px solid #3b82f6; font-size:14px;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background:white; padding:8px; border-radius:5px; margin-bottom:5px; border-left:3px solid #3b82f6;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
             enc = urllib.parse.quote(ja)
             st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}")
     
@@ -144,23 +130,24 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 功能鍵 (強制橫向並排 4 個)
-        ctrl_cols = st.columns(4)
-        with ctrl_cols[0]: 
+        # 功能鍵 (強迫橫排，不論手機直立)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: 
             if st.button("🔄"): reset_state(); st.rerun()
-        with ctrl_cols[1]:
+        with c2:
             if st.button("⬅️"):
                 if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        with ctrl_cols[2]:
+        with c3:
             if st.button("⏮️"):
                 if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
-        with ctrl_cols[3]:
+        with c4:
             if st.button("⏭️"):
                 if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
         
-        # --- 核心：按鈕區域強制 3 欄排列，不論手機是否直立 ---
+        # --- 核心優化：橫向流動按鈕區 ---
+        # 解決手機直立時按鈕垂直堆疊的問題
         n_cols = 3 
         for i in range(0, len(st.session_state.shuf), n_cols):
             row_cols = st.columns(n_cols)
@@ -183,8 +170,10 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("正解！")
+            # 答對後的語音播放：採用 HTML5 直接內嵌繞過攔截
             enc = urllib.parse.quote(ja_raw)
-            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}")
+            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={enc}"
+            st.components.v1.html(f'<audio autoplay><source src="{tts_url}" type="audio/mpeg"></audio>', height=0)
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
