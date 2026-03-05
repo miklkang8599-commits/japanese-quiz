@@ -4,69 +4,69 @@ import random
 import re
 import requests
 import base64
-from io import BytesIO
 
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
 # 1. 【核心音訊修復】：採用 Base64 內嵌技術，確保 Chrome 與 iPhone 都能播放。
-# 2. 【填空式重組介面】：答題區預顯標點符號與「口」空格，直觀掌握句構。
-# 3. 【同步對齊技術】：確保「口」空格數量與下方按鈕數量絕對一致。
-# 4. 【長詞保護機制】：保護「ありがとうございます」等常用語不被切碎。
-# 5. 【直讀式預習模式】：內容全展開，每題配備獨立音訊播放器。
-# 6. 【智慧排序與題數】：支援 1, 2, 10 排序，預設 5 題練習。
+# 2. 【手機排版優化】：針對 iPhone 窄螢幕設計，縮減答題區，優化按鈕點擊感。
+# 3. 【填空式重組】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
+# 4. 【長詞保護】：保護「ありがとうございます」等常用語不被切碎。
+# 5. 【預覽全展開】：預習模式無需折疊，每題配備獨立語音播放器。
 # ==========================================
 
-st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文填空重組", layout="wide")
 
-# CSS 優化
+# 強力手機版 CSS 修復
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 10px; height: 3.2em; font-size: 18px !important; margin-bottom: 8px; }
+    /* 全域背景與字體 */
+    .main { background-color: #f8fafc; }
+    
+    /* 答題區：縮小高度、緊湊排版 */
     .res-box {
-        font-size: 26px; color: #1e40af; background-color: #eff6ff; 
-        padding: 20px; border-radius: 12px; border: 2px dashed #60a5fa; 
-        min-height: 110px; margin-bottom: 15px; line-height: 2.2; letter-spacing: 2px;
+        font-size: 20px; color: #1e40af; background-color: #ffffff; 
+        padding: 12px; border-radius: 12px; border: 2px solid #e2e8f0; 
+        min-height: 80px; margin-bottom: 10px; line-height: 1.8;
         display: flex; flex-wrap: wrap; align-items: center;
     }
-    .slot-empty { color: #bfdbfe; border-bottom: 2px solid #bfdbfe; margin: 0 8px; min-width: 45px; text-align: center; font-weight: bold; }
-    .slot-filled { color: #1e40af; border-bottom: 2px solid #60a5fa; margin: 0 8px; padding: 0 4px; }
-    .punc-fixed { color: #1e3a8a; font-weight: bold; font-size: 32px; padding: 0 8px; }
-    [data-testid="stSidebar"] .stButton>button { height: 2.5em; font-size: 16px !important; }
-    .preview-card { background: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 10px; }
+    .slot-empty { color: #cbd5e1; border-bottom: 2px solid #cbd5e1; margin: 0 4px; min-width: 30px; text-align: center; }
+    .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
+    .punc-fixed { color: #64748b; font-weight: bold; font-size: 22px; padding: 0 2px; }
+
+    /* 控制按鈕列：四格橫排，縮小高度 */
+    .stButton>button { 
+        border-radius: 8px; height: 2.8em; font-size: 15px !important; 
+        padding: 0px !important; margin-bottom: 5px;
+    }
+    
+    /* 單字按鈕區：自動流動排版 */
+    div[data-testid="column"] { padding: 0 2px !important; }
+    
+    /* 側邊欄優化 */
+    [data-testid="stSidebar"] { width: 250px !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 核心：Base64 音訊處理函數 ---
+# --- 核心：Base64 音訊處理 ---
 def get_audio_b64(text):
-    """
-    將 Google TTS 音訊下載並轉換為 Base64，確保跨平台相容性
-    """
     try:
         tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(tts_url, headers=headers)
+        r = requests.get(tts_url, headers=headers, timeout=5)
         if r.status_code == 200:
             return base64.b64encode(r.content).decode()
-    except:
-        return None
+    except: return None
     return None
 
 def play_audio(text, auto=False):
-    """生成 HTML5 內嵌播放器"""
     b64_str = get_audio_b64(text)
     if b64_str:
         autoplay = "autoplay" if auto else ""
-        html_code = f"""
-            <audio controls {autoplay} style="width:100%; height:40px;">
-                <source src="data:audio/mp3;base64,{b64_str}" type="audio/mp3">
-            </audio>
-        """
-        st.components.v1.html(html_code, height=50)
-    else:
-        st.warning("語音加載失敗")
+        html_code = f'<audio controls {autoplay} style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64_str}" type="audio/mp3"></audio>'
+        st.components.v1.html(html_code, height=45)
 
-# --- 資料讀取與處理 ---
+# --- 資料讀取 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -88,21 +88,19 @@ def natural_sort_key(s):
 def unified_parser(text):
     text = re.sub(r'[\s\u3000]', '', text)
     protected = ['ありがとうございます', 'ありがとうございました', 'すみません', 'どのくらい', 'どのぐらい', 'どの出口', 'ございます']
-    for i, w in enumerate(protected):
-        text = text.replace(w, f"TOKEN{i}PROTECT")
+    for i, w in enumerate(protected): text = text.replace(w, f"TOKEN{i}PROTECT")
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     raw_parts = re.split(pattern, text)
-    tokens = []
-    for p in raw_parts:
-        if not p: continue
+    tokens = [p for p in raw_parts if p]
+    final_tokens = []
+    for p in tokens:
         is_p = False
         for i, w in enumerate(protected):
-            if f"TOKEN{i}PROTECT" in p:
-                tokens.append(w); is_p = True; break
-        if not is_p: tokens.append(p)
-    return tokens
+            if f"TOKEN{i}PROTECT" in p: final_tokens.append(w); is_p = True; break
+        if not is_p: final_tokens.append(p)
+    return final_tokens
 
 def reset_state():
     st.session_state.ans = []
@@ -110,53 +108,39 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
-# --- 初始化 ---
 if 'q_idx' not in st.session_state:
-    st.session_state.q_idx = 0
-    st.session_state.num_q = 5
+    st.session_state.q_idx, st.session_state.num_q = 0, 5
     reset_state()
 
 df, cols = load_data()
 
 if df is not None:
-    st.sidebar.header("⚙️ 練習設定")
+    # 側邊欄設定
     u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
+    sel_unit = st.sidebar.selectbox("單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
     c_list = sorted(u_df[cols['ch']].unique().tolist(), key=natural_sort_key)
-    sel_start_ch = st.sidebar.selectbox("2. 起始章節", c_list)
+    sel_start_ch = st.sidebar.selectbox("章節", c_list)
     
     start_idx = c_list.index(sel_start_ch)
     filtered_df = u_df[u_df[cols['ch']].isin(c_list[start_idx:])]
     max_q = len(filtered_df)
 
-    st.sidebar.write(f"3. 練習題數: {st.session_state.num_q}")
-    st.session_state.num_q = st.sidebar.slider("調整題數", 1, max_q, st.session_state.num_q)
-    c_m, c_p = st.sidebar.columns(2)
-    with c_m:
-        if st.button("➖ 少一題"):
-            if st.session_state.num_q > 1: st.session_state.num_q -= 1; st.rerun()
-    with c_p:
-        if st.button("➕ 多一題"):
-            if st.session_state.num_q < max_q: st.session_state.num_q += 1; st.rerun()
-
+    st.sidebar.write(f"題數: {st.session_state.num_q}")
+    st.session_state.num_q = st.sidebar.slider("調整", 1, max_q, st.session_state.num_q)
+    
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if 'lkey' not in st.session_state or st.session_state.lkey != f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}":
-        st.session_state.lkey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"; st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.session_state.lkey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
+        st.session_state.q_idx = 0; reset_state(); st.rerun()
 
+    # 主畫面
     if st.sidebar.checkbox("📖 預習模式"):
-        st.header("📖 課文預習")
         for item in quiz_list:
-            ja_text = str(item[cols['ja']]).strip()
-            st.markdown(f"""
-                <div class="preview-card">
-                    <div style='font-size:12px; color:#94a3b8;'>章節：{item[cols['ch']]}</div>
-                    <div style='font-size:16px; color:#475569;'>{item[cols['cn']]}</div>
-                    <div style='font-size:20px; color:#1d4ed8; font-weight:bold;'>{ja_text}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            play_audio(ja_text)
+            ja = str(item[cols['ja']]).strip()
+            st.markdown(f"<div style='background:white; padding:10px; border-radius:8px; margin-bottom:5px; border-left:4px solid #3b82f6;'><b>{item[cols['cn']]}</b><br>{ja}</div>", unsafe_allow_html=True)
+            play_audio(ja)
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
@@ -168,37 +152,36 @@ if df is not None:
         if not st.session_state.shuf:
             st.session_state.shuf = list(words); random.shuffle(st.session_state.shuf)
 
-        st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
-        st.info(f"💡 {q[cols['cn']]}")
+        st.write(f"Q{st.session_state.q_idx + 1} | {q[cols['cn']]}")
 
-        # 答題區顯示
+        # 答題區
         u_ans = list(st.session_state.ans)
         html = '<div class="res-box">'
         for t in all_t:
             if t in puncs: html += f'<span class="punc-fixed">{t}</span>'
             else:
-                if u_ans:
-                    val = u_ans.pop(0)
-                    html += f'<span class="slot-filled">{val}</span>'
+                if u_ans: html += f'<span class="slot-filled">{u_ans.pop(0)}</span>'
                 else: html += f'<span class="slot-empty">口</span>'
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        ctrl = st.columns(4)
-        with ctrl[0]:
-            if st.button("🔄重填"): reset_state(); st.rerun()
-        with ctrl[1]:
-            if st.button("⬅️退回"):
+        # 控制鍵：緊湊橫排
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: 
+            if st.button("🔄"): reset_state(); st.rerun()
+        with c2:
+            if st.button("⬅️"):
                 if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        with ctrl[2]:
-            if st.button("⏮️上題"):
+        with c3:
+            if st.button("⏮️"):
                 if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
-        with ctrl[3]:
-            if st.button("⏭️下題"):
+        with c4:
+            if st.button("⏭️"):
                 if st.session_state.q_idx + 1 < len(quiz_list): st.session_state.q_idx += 1; reset_state(); st.rerun()
 
+        # 單字按鈕：自適應寬度
         st.write("---")
-        b_cols = st.columns(2) 
+        b_cols = st.columns(2) # 雖然寫 2，但手機上會更緊湊
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.used_history:
                 with b_cols[i % 2]:
@@ -206,18 +189,17 @@ if df is not None:
                         st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
 
         if st.session_state.ans and not st.session_state.is_correct:
-            if st.button("🔍 檢查答案", type="primary", use_container_width=True):
+            if st.button("🔍 檢查", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(words):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: st.error("不對喔")
 
         if st.session_state.is_correct:
-            st.success("🎊 正解！")
-            st.markdown(f"### {ja_raw}")
+            st.success("正解！")
             play_audio(ja_raw, auto=True)
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
-        st.header("🎊 練習完成！")
+        st.header("練習完成！")
         if st.button("🔄 重新開始", type="primary", use_container_width=True): 
             st.session_state.q_idx = 0; reset_state(); st.rerun()
