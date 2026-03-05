@@ -1,11 +1,12 @@
 """
 ================================================================
-【日文結構練習器 - v3.6 極致緊湊版】
-版本編號：v3.6.20260306
+【日文結構練習器 - v3.7 大拇指優化版】
+版本編號：v3.7.20260306
+更新時間：2026-03-06
 設計重點：
-1. 消除間隙：強制 CSS 覆蓋 st.columns 的 gap，實現按鈕緊貼。
-2. 空間精算：縮減所有組件高度，專為手機直立螢幕優化。
-3. 預習模式：全展開清單，Base64 穩定音訊。
+1. 佈局翻轉：按鈕池與功能鍵位置對調，符合手機單手操作習慣。
+2. 極限緊貼：按鈕間距降至 2px，答案空格縮小。
+3. Base64 音訊：徹底解決 iPhone 播放器灰色不可點擊問題。
 ================================================================
 """
 
@@ -16,14 +17,14 @@ import re
 import requests
 import base64
 
-# --- 【重點 1】強制緊貼 CSS (無視環境間距) ---
-st.set_page_config(page_title="🇯🇵 日文重組 v3.6", layout="wide")
+# --- 【重點 1】極限緊湊與位置對調 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v3.7", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. 核心：強制移除 Column 之間的所有間距 */
+    /* 1. 核心：強制按鈕緊密併排 (2px 間距) */
     [data-testid="stHorizontalBlock"] {
-        gap: 4px !important; /* 縮小到極致 */
+        gap: 2px !important; 
         display: flex !important;
         flex-wrap: wrap !important;
     }
@@ -32,34 +33,33 @@ st.markdown("""
         margin: 0px !important;
         flex: 0 1 auto !important;
         width: auto !important;
-        min-width: 0px !important;
     }
 
     /* 2. 移除所有預設內邊距 */
-    .block-container { padding: 0.5rem 0.3rem !important; }
+    .block-container { padding: 0.5rem 0.2rem !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 3. 答案區：扁平化卡片 */
+    /* 3. 答案區：扁平化與微小化 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 10px; 
-        border-radius: 10px; border: 2px solid #e5e7eb; 
-        min-height: 75px; margin-bottom: 8px; align-items: center; 
+        background-color: #f9fafb; padding: 8px; 
+        border-radius: 8px; border: 1.5px solid #e5e7eb; 
+        min-height: 60px; margin-bottom: 5px; align-items: center; 
     }
     .word-slot { 
-        min-width: 40px; height: 32px; border-bottom: 2px solid #e5e7eb; 
+        min-width: 35px; height: 30px; border-bottom: 2px solid #cbd5e1; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 18px; color: #1cb0f6; font-weight: bold; 
+        font-size: 17px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
-    .punc-display { font-size: 20px; color: #afafaf; font-weight: bold; }
+    .punc-display { font-size: 18px; color: #94a3b8; font-weight: bold; }
 
-    /* 4. 仿 Duolingo 緊湊按鈕 */
+    /* 4. 緊湊按鈕樣式 */
     div.stButton > button {
-        border-radius: 8px !important;
-        border: 2px solid #e5e7eb !important;
+        border-radius: 6px !important;
+        border: 1px solid #e5e7eb !important;
         border-bottom: 3px solid #e5e7eb !important;
-        padding: 4px 10px !important;
-        font-size: 15px !important;
+        padding: 4px 8px !important;
+        font-size: 14px !important;
         font-weight: bold !important;
         height: auto !important;
         width: auto !important;
@@ -67,15 +67,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 【重點 2】功能函數 ---
-
+# --- 【重點 2】Base64 音訊技術 ---
 def get_audio_html(text):
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
     try:
         response = requests.get(tts_url)
         if response.status_code == 200:
             b64 = base64.b64encode(response.content).decode()
-            return f'<audio controls style="width:100%; height:38px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
@@ -113,14 +112,13 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 側邊欄與資料篩選
+    # 側邊欄簡化
     unit_list = sorted(df[cols['unit']].astype(str).unique())
     sel_unit = st.sidebar.selectbox("單元", unit_list)
     unit_df = df[df[cols['unit']].astype(str) == sel_unit]
     sel_start_ch = st.sidebar.selectbox("章節", sorted(unit_df[cols['ch']].astype(str).unique()))
     filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
     
-    # 題數控制
     cs1, cs2 = st.sidebar.columns(2)
     if cs1.button("➖ 少"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
     if cs2.button("➕ 多"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
@@ -137,7 +135,6 @@ if df is not None:
             st.write("---")
     
     elif st.session_state.q_idx < len(quiz_list):
-        # 測驗主畫面
         q = quiz_list[st.session_state.q_idx]
         ja_raw, cn_text = str(q[cols['ja']]).strip(), q[cols['cn']]
         sentence_struct = get_sentence_structure(ja_raw)
@@ -148,7 +145,7 @@ if df is not None:
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # 答案填充框
+        # --- 1. 答案區 (格位縮小) ---
         current_ans_list = list(st.session_state.ans)
         html_content = '<div class="res-box">'
         for item in sentence_struct:
@@ -159,19 +156,9 @@ if df is not None:
         html_content += '</div>'
         st.markdown(html_content, unsafe_allow_html=True)
 
-        # 導航鍵
-        n1, n2, n3, n4 = st.columns(4)
-        if n1.button("⏮上題"): 
-            if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
-        if n2.button("⏭下題"): 
-            if st.session_state.q_idx < len(quiz_list)-1: st.session_state.q_idx += 1; reset_state(); st.rerun()
-        if n3.button("🔄重填"): reset_state(); st.rerun()
-        if n4.button("⬅退回"):
-            if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-
         st.write("---")
-        
-        # --- 核心優化：零間隔流式按鈕 ---
+
+        # --- 2. 單字按鈕區 (位置上移，緊密排列) ---
         num_shuf = len(st.session_state.shuf)
         word_cols = st.columns(num_shuf if num_shuf > 0 else 1)
         for idx, t in enumerate(st.session_state.shuf):
@@ -179,8 +166,20 @@ if df is not None:
                 if word_cols[idx].button(t, key=f"btn_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
+        st.write(" ") # 微小間隔
+
+        # --- 3. 功能導航鍵 (位置下移) ---
+        n1, n2, n3, n4 = st.columns(4)
+        if n1.button("⏮上"): 
+            if st.session_state.q_idx > 0: st.session_state.q_idx -= 1; reset_state(); st.rerun()
+        if n2.button("⏭下"): 
+            if st.session_state.q_idx < len(quiz_list)-1: st.session_state.q_idx += 1; reset_state(); st.rerun()
+        if n3.button("🔄重"): reset_state(); st.rerun()
+        if n4.button("⬅退"):
+            if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
+
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
-            if st.button("🔍 CHECK ANSWER", type="primary", use_container_width=True):
+            if st.button("🔍 CHECK", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("不對喔！")
