@@ -30,37 +30,27 @@ def load_data():
         st.error(f"❌ 讀取失敗：{e}"); return None, None
 
 def word_splitter(text):
-    """
-    更精細的拆解邏輯：將助詞獨立切開
-    """
+    """將助詞獨立切開的邏輯"""
     text = text.strip()
-    # 定義要獨立切開的助詞清單
     particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
-    
-    # 建立正則表達式：在助詞前後加上分隔符號
-    # 用括號捕捉助詞，以便保留在 split 結果中
     pattern = f"({'|'.join(particles)}|、|。|！|？)"
-    
-    # 切分句子
     raw_tokens = re.split(pattern, text)
-    
-    # 過濾掉空字串並清理
     tokens = [t for t in raw_tokens if t and t.strip()]
-    
-    # 如果切出來太少（例如沒有助詞的短句），則每兩個字強拆
     if len(tokens) < 3:
         tokens = [text[i:i+2] for i in range(0, len(text), 2)]
-        
     return tokens
 
+# --- 修正後的重置邏輯 ---
 def reset_state():
-    st.session_state.q_idx = 0
     st.session_state.ans = []
     st.session_state.used_history = []
-    st.session_state.shuf = []
+    st.session_state.shuf = [] # 必須清空隨機單字，下一題才會重新生成
     st.session_state.is_correct = False
 
-if 'q_idx' not in st.session_state: reset_state()
+# 初始化
+if 'q_idx' not in st.session_state:
+    st.session_state.q_idx = 0
+    reset_state()
 
 df, cols = load_data()
 
@@ -78,9 +68,13 @@ if df is not None:
         num_q = st.sidebar.slider("3. 練習題數", 1, len(filtered_df), min(10, len(filtered_df)))
         quiz_list = filtered_df.head(num_q).to_dict('records')
 
-        if 'last_key' not in st.session_state or st.session_state.last_key != f"{sel_unit}-{sel_start_ch}-{num_q}":
-            st.session_state.last_key = f"{sel_unit}-{sel_start_ch}-{num_q}"
-            reset_state(); st.rerun()
+        # 側邊欄變動時，重回第一題
+        cur_key = f"{sel_unit}-{sel_start_ch}-{num_q}"
+        if 'last_key' not in st.session_state or st.session_state.last_key != cur_key:
+            st.session_state.last_key = cur_key
+            st.session_state.q_idx = 0
+            reset_state()
+            st.rerun()
 
         if st.sidebar.checkbox("📖 開啟預習模式"):
             for item in quiz_list:
@@ -88,10 +82,12 @@ if df is not None:
                     st.write(f"### {item[cols['ja']]}")
                     st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={item[cols['ja']]}")
 
+        # --- 測驗主畫面 ---
         elif st.session_state.q_idx < len(quiz_list):
             q = quiz_list[st.session_state.q_idx]
             ja_raw = str(q[cols['ja']]).strip()
             
+            # 如果沒有當前題目的打亂單字，則生成
             if not st.session_state.shuf:
                 tokens = word_splitter(ja_raw)
                 random.shuffle(tokens)
@@ -106,22 +102,23 @@ if df is not None:
             c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
                 if st.button("🔄 全部重填", use_container_width=True):
-                    st.session_state.ans, st.session_state.used_history = [], []; st.rerun()
+                    reset_state()
+                    st.rerun()
             with c2:
                 if st.button("⬅️ 退回", use_container_width=True):
                     if st.session_state.used_history:
                         st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
             with c3:
-                if st.button("⏭️ 跳過", use_container_width=True):
-                    st.session_state.q_idx += 1; reset_state(); st.rerun()
+                if st.button("⏭️ 跳過此題", use_container_width=True):
+                    st.session_state.q_idx += 1
+                    reset_state()
+                    st.rerun()
 
             st.write("---")
-            # 隨機排布的單字與助詞按鈕
             btn_cols = st.columns(5) 
             for i, t in enumerate(st.session_state.shuf):
                 if i not in st.session_state.used_history:
                     with btn_cols[i % 5]:
-                        # 助詞按鈕給予不同的視覺暗示（例如更醒目）
                         if st.button(t, key=f"btn_{i}", use_container_width=True):
                             st.session_state.ans.append(t)
                             st.session_state.used_history.append(i)
@@ -131,16 +128,22 @@ if df is not None:
                 if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                     if "".join(st.session_state.ans).replace(" ","") == ja_raw.replace(" ",""):
                         st.session_state.is_correct = True; st.rerun()
-                    else: st.error("順序不對喔！檢查看看助詞是否放錯了？")
+                    else: st.error("順序不對喔！")
 
             if st.session_state.is_correct:
                 st.success(f"🎊 正解！{ja_raw}")
                 st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
+                # 點擊下一題，增加 q_idx 並呼叫重置
                 if st.button("下一題 ➡️", type="primary", use_container_width=True):
-                    st.session_state.q_idx += 1; reset_state(); st.rerun()
+                    st.session_state.q_idx += 1
+                    reset_state()
+                    st.rerun()
         else:
             st.header("🎊 練習成果回顧")
             st.balloons()
-            if st.button("🔄 重新開始"): reset_state(); st.rerun()
+            if st.button("🔄 重新開始"): 
+                st.session_state.q_idx = 0
+                reset_state()
+                st.rerun()
     else:
         st.warning(f"⚠️ 篩選範圍內沒有資料。")
