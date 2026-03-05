@@ -1,18 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v4.6 核心通訊修正】
+【技術演進與邏輯追蹤表 - v4.7 參數修正版】
 ----------------------------------------------------------------
-- v4.5 (失敗原因)：
-  使用 st.text_input 接收 JS 資料。在手機瀏覽器上，JS 填入數值後
-  無法穩定觸發 Streamlit 的 Rerun，導致數字顯示在灰色條上卻沒動作。
+- v4.6 (失敗原因)：
+  傳入了無效參數 aria_label 給 st.text_input，導致程式崩潰。
 
-- v4.6 (本次解法 - 實體按鈕模擬法)：
-  邏輯：
-  1. 渲染：HTML 按鈕池 (負責手機直立併排)。
-  2. 通訊：建立一個隱藏的 st.selectbox。
-  3. 橋接：JS 函數 handleBtnClick 不再只是填入數值，而是強制
-     執行 Streamlit 原生組件的更新。
-  4. 穩定：這能確保 100% 點擊有反應，且側邊欄狀態完全保住。
+- v4.7 (本次解法)：
+  1. 參數修正：使用 label_visibility="collapsed" 來隱藏標籤。
+  2. JS 定位優化：改用 placeholder 作為 JavaScript 的搜尋錨點。
+  3. 保留排版：單字池依然採用 HTML Flex 渲染，確保手機直立 100% 併排。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -24,15 +20,15 @@ import re
 import requests
 import base64
 
-# --- 【重點 1】全環境排版優化 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v4.6", layout="wide")
+# --- 【重點 1】視覺佈局 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v4.7", layout="wide")
 
 st.markdown("""
     <style>
     .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 答案區：極致緊湊 */
+    /* 答案區：極致緊湊，空格小一點 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
         background-color: #ffffff; padding: 10px; 
@@ -44,8 +40,11 @@ st.markdown("""
         display: flex; align-items: center; justify-content: center; 
         font-size: 16px; color: #2563eb; font-weight: bold; margin: 0 2px;
     }
-    /* 隱藏觸發器容器 */
-    .hidden-gate { display: none !important; }
+    
+    /* 徹底隱藏數據通道，不留痕跡 */
+    div[data-testid="stTextInput"] {
+        display: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,7 +84,7 @@ def get_audio_html(text):
     except: pass
     return ""
 
-# --- 【重點 3】主程式邏輯 ---
+# --- 【重點 3】初始化狀態 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 10
     reset_state()
@@ -136,12 +135,12 @@ if df is not None:
 
         st.write("---")
 
-        # B. 單字併排按鈕池 (HTML 渲染)
+        # B. 單字併排池 (HTML 渲染)
         btn_html = ""
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 btn_html += f'''
-                <button onclick="sendValue('{idx}')" style="
+                <button onclick="sendToStreamlit('{idx}')" style="
                     background: white; border: 1px solid #e5e7eb; border-bottom: 3.5px solid #e5e7eb;
                     border-radius: 10px; padding: 6px 14px; margin: 3px; font-size: 16px; font-weight: bold;
                     color: #4b4b4b; cursor: pointer;">{t}</button>
@@ -150,31 +149,26 @@ if df is not None:
         st.components.v1.html(f"""
             <div style="display:flex; flex-wrap:wrap;">{btn_html}</div>
             <script>
-                function sendValue(v) {{
-                    const inputs = window.parent.document.querySelectorAll('input');
-                    for (let input of inputs) {{
-                        if (input.ariaLabel === "hidden_input") {{
-                            input.value = v;
-                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            break;
-                        }}
+                function sendToStreamlit(v) {{
+                    const inputs = window.parent.document.querySelectorAll('input[placeholder="gate_input"]');
+                    if (inputs.length > 0) {{
+                        inputs[0].value = v;
+                        inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
                     }}
                 }}
             </script>
         """, height=120)
 
-        # 隱藏的數據接收區 (使用空容器包裝以隱藏)
-        st.markdown('<div class="hidden-gate">', unsafe_allow_html=True)
-        val = st.text_input("hidden_input", key="gate", aria_label="hidden_input")
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 數據接收通道 (使用 placeholder 定位，不顯示 label)
+        # label_visibility="collapsed" 是 Streamlit 正確隱藏標籤的方式
+        trigger_val = st.text_input("hidden", key="gate", placeholder="gate_input", label_visibility="collapsed")
 
-        if val:
-            idx = int(val)
+        if trigger_val:
+            idx = int(trigger_val)
             if idx not in st.session_state.used_history:
                 st.session_state.ans.append(st.session_state.shuf[idx])
                 st.session_state.used_history.append(idx)
-                # 重要：清除輸入框以供下次點擊
                 st.rerun()
 
         # C. 功能導航 (底部)
