@@ -1,14 +1,15 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v4.8 最終通訊方案】
+【技術演進與邏輯追蹤表 - v4.9 邏輯同步版】
 ----------------------------------------------------------------
-- v4.7 (失敗原因)：
-  JS 無法穿透 iframe 觸發 Streamlit 組件。導致按鈕排版美但點了沒反應。
+- v4.8 (失敗原因)：
+  點擊 URL 參數後，Streamlit 的執行順序導致 UI 渲染在資料更新之前，
+  造成「單字沒進框」且「按鈕沒減少」的錯覺。
 
-- v4.8 (本次解法 - URL 錨點通訊)：
-  1. 渲染：HTML <a> 標籤偽裝成按鈕 (確保手機直立併排)。
-  2. 通訊：點擊後網址會帶上 ?pick=idx，Python 攔截參數後立即執行邏輯。
-  3. 穩定：執行完後立即 clear 參數，確保側邊欄不跳動，功能不失效。
+- v4.9 (本次解法 - 優先攔截法)：
+  1. 優先處理：在任何 UI 渲染前先讀取 query_params。
+  2. 狀態鎖定：一旦偵測到 pick 參數，立即更新 session_state。
+  3. 視覺同步：按鈕池會根據 updated 的 used_history 重新渲染。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,19 +21,48 @@ import re
 import requests
 import base64
 
-# --- 【重點 1】手機極限排版 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v4.8", layout="wide")
+# --- 【步驟 1】設定頁面與優先攔截參數 ---
+st.set_page_config(page_title="🇯🇵 日文重組 v4.9", layout="wide")
 
+# 初始化 session_state
+if 'ans' not in st.session_state:
+    st.session_state.ans = []
+if 'used_history' not in st.session_state:
+    st.session_state.used_history = []
+if 'shuf' not in st.session_state:
+    st.session_state.shuf = []
+if 'is_correct' not in st.session_state:
+    st.session_state.is_correct = False
+if 'q_idx' not in st.session_state:
+    st.session_state.q_idx = 0
+if 'num_q' not in st.session_state:
+    st.session_state.num_q = 10
+
+# 【核心突破】在渲染任何 CSS 前處理點擊，確保資料與畫面同步
+params = st.query_params
+if "pick" in params:
+    try:
+        idx = int(params["pick"])
+        # 檢查是否已使用，避免重複點擊
+        if idx not in st.session_state.used_history:
+            st.session_state.ans.append(st.session_state.shuf[idx])
+            st.session_state.used_history.append(idx)
+        # 清除參數並強制立即重刷，這會讓按鈕減少、單字進框
+        st.query_params.clear()
+        st.rerun()
+    except:
+        st.query_params.clear()
+
+# --- 【步驟 2】極限併排 CSS ---
 st.markdown("""
     <style>
     .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 答案區：格位小一點 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 12px; 
-        border-radius: 12px; border: 1.5px solid #e5e7eb; 
+        background-color: #ffffff; padding: 10px; 
+        border-radius: 10px; border: 1.5px solid #e5e7eb; 
         min-height: 55px; margin-bottom: 5px; align-items: center; 
     }
     .word-slot { 
@@ -40,37 +70,18 @@ st.markdown("""
         display: flex; align-items: center; justify-content: center; 
         font-size: 16px; color: #2563eb; font-weight: bold; margin: 0 2px;
     }
-    
-    /* HTML 按鈕池排版 (杜林風格) */
-    .btn-pool {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        justify-content: flex-start;
-        padding: 10px 0;
-    }
+    .btn-pool { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; }
     .custom-btn {
-        display: inline-block;
-        background-color: white;
-        border: 1px solid #e5e7eb;
-        border-bottom: 3.5px solid #e5e7eb;
-        border-radius: 10px;
-        padding: 8px 15px;
-        font-size: 16px;
-        font-weight: bold;
-        color: #4b4b4b;
-        cursor: pointer;
+        display: inline-block; background-color: white;
+        border: 1px solid #e5e7eb; border-bottom: 3.5px solid #e5e7eb;
+        border-radius: 10px; padding: 8px 15px; font-size: 16px;
+        font-weight: bold; color: #4b4b4b; cursor: pointer;
         text-decoration: none;
-        transition: transform 0.1s;
-    }
-    .custom-btn:active {
-        transform: translateY(2px);
-        border-bottom-width: 1px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 【重點 2】資料與音訊函數 ---
+# --- 【步驟 3】功能函數 ---
 @st.cache_data(ttl=60)
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA/export?format=csv&gid=1337973082"
@@ -104,27 +115,12 @@ def get_audio_html(text):
     return ""
 
 def reset_state():
-    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
+    st.session_state.ans = []
+    st.session_state.used_history = []
+    st.session_state.shuf = []
+    st.session_state.is_correct = False
 
-# --- 【重點 3】處理 URL 點擊通訊 (獨立解法的核心) ---
-params = st.query_params
-if "pick" in params:
-    try:
-        idx = int(params["pick"])
-        if idx not in st.session_state.get('used_history', []):
-            st.session_state.ans.append(st.session_state.shuf[idx])
-            st.session_state.used_history.append(idx)
-        # 關鍵：清除參數防止循環觸發，並確保 UI 更新
-        st.query_params.clear()
-        st.rerun()
-    except:
-        st.query_params.clear()
-
-# --- 【重點 4】主程式邏輯 ---
-if 'q_idx' not in st.session_state:
-    st.session_state.q_idx, st.session_state.num_q = 0, 10
-    reset_state()
-
+# --- 【步驟 4】主程式 ---
 df, cols = load_data()
 
 if df is not None:
@@ -139,7 +135,6 @@ if df is not None:
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if preview_mode:
-        st.subheader("📖 預習清單")
         for i, item in enumerate(quiz_list):
             st.markdown(f"**{i+1}. {item[cols['cn']]}**")
             st.write(item[cols['ja']])
@@ -152,35 +147,35 @@ if df is not None:
         sentence_struct = get_sentence_structure(ja_raw)
         word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
         
+        # 題目初始化
         if not st.session_state.shuf:
             st.session_state.shuf = list(word_tokens); random.shuffle(st.session_state.shuf)
 
         st.caption(f"Q{st.session_state.q_idx + 1} | {cn_text}")
 
-        # A. 答案展示區
-        curr_ans = list(st.session_state.ans)
+        # A. 答案展示區 (按順序渲染已填入的單字)
+        curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
-            if s['type'] == 'punc': ans_html += f'<span style="font-size:18px; color:#94a3b8; font-weight:bold;">{s["content"]}</span>'
+            if s['type'] == 'punc': 
+                ans_html += f'<span style="font-size:18px; color:#94a3b8; font-weight:bold;">{s["content"]}</span>'
             else:
-                val = curr_ans.pop(0) if curr_ans else ""
+                val = curr_ans_copy.pop(0) if curr_ans_copy else ""
                 ans_html += f'<div class="word-slot">{val}</div>'
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
         st.write("---")
 
-        # B. 單字併排按鈕池 (HTML 連結通訊法)
-        # 不使用 iframe，直接在 Markdown 中渲染，保證 100% 併排且點擊有效
+        # B. 單字併排按鈕池 (根據 used_history 決定顯示哪些按鈕)
         btn_pool_html = '<div class="btn-pool">'
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
-                # 透過 URL 參數傳遞點擊資料，避開 JavaScript 通訊問題
                 btn_pool_html += f'<a href="?pick={idx}" target="_self" class="custom-btn">{t}</a>'
         btn_pool_html += '</div>'
         st.markdown(btn_pool_html, unsafe_allow_html=True)
 
-        # C. 功能導航 (底部)
+        # C. 功能導航
         st.write(" ")
         n1, n2, n3, n4 = st.columns(4)
         if n1.button("⏮上"): 
@@ -189,13 +184,14 @@ if df is not None:
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         if n3.button("🔄重"): reset_state(); st.rerun()
         if n4.button("⬅退"):
-            if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
+            if st.session_state.used_history:
+                st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
 
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
             if st.button("🔍 CHECK", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("不對喔！")
+                else: st.error("順序不對喔！")
 
         if st.session_state.is_correct:
             st.success("正解！")
