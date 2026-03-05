@@ -55,13 +55,10 @@ def natural_sort_key(s):
             for text in re.split('([0-9]+)', s)]
 
 def word_splitter(text):
-    # 徹底移除所有空白
     text = re.sub(r'[\s\u3000]', '', text)
-    # 保護長詞清單
     protected = ['ありがとうございます', 'ありがとうございました', 'どのくらい', 'どのぐらい', 'すみません', 'ごめんなさい', 'おはようございます', '失礼します', 'お疲れ様です']
     for i, w in enumerate(protected):
         text = text.replace(w, f"TOKEN{i}PROTECT")
-    # 定義拆分點：助詞與標點
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
@@ -88,14 +85,13 @@ def reset_state():
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
 if 'num_q' not in st.session_state:
-    st.session_state.num_q = 5  # 預設題數 5
+    st.session_state.num_q = 5
 if 'ans' not in st.session_state:
     reset_state()
 
 df, cols = load_data()
 
 if df is not None:
-    # --- 側邊欄設定 ---
     st.sidebar.header("⚙️ 練習設定")
     u_list = sorted(df[cols['unit']].unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
@@ -114,11 +110,8 @@ if df is not None:
         st.session_state.num_q = max_q_available
 
     st.sidebar.write(f"3. 設定練習題數 (最大: {max_q_available})")
-    # Slider 拉桿
-    st.session_state.num_q = st.sidebar.slider(
-        "調整題數", 1, max_q_available, st.session_state.num_q, step=1
-    )
-    # 微調按鈕
+    st.session_state.num_q = st.sidebar.slider("調整題數", 1, max_q_available, st.session_state.num_q, step=1)
+    
     c_m, c_p = st.sidebar.columns(2)
     with c_m:
         if st.button("➖ 少一題"):
@@ -134,9 +127,63 @@ if df is not None:
         st.session_state.lkey = ckey
         st.session_state.q_idx = 0; reset_state(); st.rerun()
 
-    # --- 主測驗區 ---
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
                 st.write(f"### {item[cols['ja']]}")
-                st.audio(f"
+                st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={item[cols['ja']]}")
+    
+    elif st.session_state.q_idx < len(quiz_list):
+        q = quiz_list[st.session_state.q_idx]
+        ja_raw = str(q[cols['ja']]).strip()
+        
+        if not st.session_state.shuf:
+            st.session_state.shuf = word_splitter(ja_raw)
+            random.shuffle(st.session_state.shuf)
+
+        st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
+        st.info(f"💡 {q[cols['cn']]}")
+
+        user_ans = "".join(st.session_state.ans)
+        st.markdown(f'<div class="res-box">{user_ans if user_ans else "請點選按鈕拼湊句子..."}</div>', unsafe_allow_html=True)
+
+        ctrl_cols = st.columns(4)
+        with ctrl_cols[0]:
+            if st.button("🔄重填"): reset_state(); st.rerun()
+        with ctrl_cols[1]:
+            if st.button("⬅️退回"):
+                if st.session_state.used_history:
+                    st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
+        with ctrl_cols[2]:
+            if st.button("⏮️上題"):
+                if st.session_state.q_idx > 0:
+                    st.session_state.q_idx -= 1; reset_state(); st.rerun()
+        with ctrl_cols[3]:
+            if st.button("⏭️下題"):
+                st.session_state.q_idx += 1; reset_state(); st.rerun()
+
+        st.write("---")
+        b_cols = st.columns(2) 
+        for i, t in enumerate(st.session_state.shuf):
+            if t and t.strip() and i not in st.session_state.used_history:
+                with b_cols[i % 2]:
+                    if st.button(t, key=f"btn_{i}"):
+                        st.session_state.ans.append(t); st.session_state.used_history.append(i); st.rerun()
+
+        if st.session_state.ans and not st.session_state.is_correct:
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True):
+                clean_target = re.sub(r'[\s\u3000]', '', ja_raw)
+                if "".join(st.session_state.ans) == clean_target:
+                    st.session_state.is_correct = True; st.rerun()
+                else: st.error("順序不對喔！")
+
+        if st.session_state.is_correct:
+            st.success(f"🎊 正解！")
+            st.markdown(f"### {ja_raw}")
+            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={ja_raw}")
+            if st.button("下一題 ➡️", type="primary", use_container_width=True):
+                st.session_state.q_idx += 1; reset_state(); st.rerun()
+    else:
+        st.header("🎊 練習完成！")
+        if st.button("🔄 重新開始", type="primary", use_container_width=True): 
+            st.session_state.q_idx = 0; reset_state(); st.rerun()
