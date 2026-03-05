@@ -7,7 +7,7 @@ import re
 st.set_page_config(page_title="🇯🇵 日文重組練習器", layout="wide")
 
 # --- 1. 設定 Google Sheets 資訊 (精確填入你提供的 GID) ---
-SHEET_ID = "1zVUNGboZALvK3val1RSbCQvEESLRSNEulqpNSzsPJ14"
+SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082" 
 # 組合 CSV 匯出連結
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
