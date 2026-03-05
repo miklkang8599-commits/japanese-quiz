@@ -1,15 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v7.3 文字標籤回歸版】
+【技術演進與邏輯追蹤表 - v7.4 完整設定版】
 ----------------------------------------------------------------
-1. 操作直覺化：
-   - 依照要求，功能鍵重新加上文字標籤 (退回、重填、上題、下題)。
-   - 使用精簡兩字標籤，兼顧提示性與空間感。
-2. 垂直空間優化：
-   - 壓縮所有組件的 margin-bottom。
-   - 將系統操作區與單字池的間距從 20px 縮減至 10px。
-3. 視覺平衡：
-   - 維持 450px 置中容器，確保文字標籤在手機上不會因太長而斷行。
+1. 需求實現：
+   - 在 expander 設定區新增「練習題數」調整功能。
+   - 將 st.session_state.num_q 的初始預設值改為 5。
+2. 佈局維持：
+   - 保留 v7.3 的文字標籤：退回、重填、上題、下題。
+   - 繼續使用置中、壓縮空間的 CSS，確保檢查結果在手機螢幕可見。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -22,15 +20,14 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v7.3", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v7.4", layout="wide")
 
 st.markdown("""
     <style>
-    /* 全域壓縮 */
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
 
-    /* 答案區：扁平化 */
+    /* 答案區 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
         background-color: #ffffff; padding: 10px; 
@@ -44,14 +41,14 @@ st.markdown("""
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 單字池：置中併排 */
+    /* 單字池 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
         flex-direction: row !important; gap: 6px !important;
         justify-content: center !important;
     }
 
-    /* 杜林風格按鈕 */
+    /* 按鈕樣式 */
     div.stButton > button {
         width: auto !important; min-width: 40px !important;
         padding: 5px 12px !important; border-radius: 12px !important;
@@ -61,7 +58,7 @@ st.markdown("""
         border-bottom: 3.5px solid #e5e7eb !important;
     }
     
-    /* 系統操作區：文字標籤膠囊化 */
+    /* 系統操作區 */
     .control-row div.stButton > button {
         padding: 3px 8px !important; 
         font-size: 13px !important;
@@ -112,17 +109,22 @@ def reset_state():
 
 # --- 3. 初始化 ---
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
-if 'num_q' not in st.session_state: st.session_state.num_q = 10
+if 'num_q' not in st.session_state: st.session_state.num_q = 5  # 預設改為 5 題
 if 'ans' not in st.session_state: reset_state()
 
 df, cols = load_data()
 
 if df is not None:
+    # 練習設定區
     with st.expander("⚙️ 練習設定", expanded=False):
         unit_list = sorted(df[cols['unit']].astype(str).unique())
         sel_unit = st.selectbox("單元", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
         sel_start_ch = st.selectbox("章節", sorted(unit_df[cols['ch']].astype(str).unique()))
+        
+        # 新增題數設定
+        st.session_state.num_q = st.number_input("練習題數", min_value=1, max_value=50, value=st.session_state.num_q, step=1)
+        
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
         preview_mode = st.checkbox("預習模式")
 
@@ -145,8 +147,7 @@ if df is not None:
             random.seed(st.session_state.q_idx)
             random.shuffle(st.session_state.shuf)
 
-        # 合併顯示題號與意譯，節省空間
-        st.info(f"Q{st.session_state.q_idx + 1} | {cn_text}")
+        st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {cn_text}")
 
         # A. 答案展示區
         curr_ans_copy = list(st.session_state.ans)
@@ -166,7 +167,7 @@ if df is not None:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # C. 系統操作 (文字標籤回歸)
+        # C. 系統操作
         st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
@@ -186,10 +187,10 @@ if df is not None:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(word_tokens):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("不對喔！💡")
+                else: st.error("順序不對喔！💡")
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
-            if st.button("繼續 ➡️", type="primary", use_container_width=True): 
+            if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
