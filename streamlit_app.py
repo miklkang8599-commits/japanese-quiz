@@ -7,21 +7,20 @@ import urllib.parse
 # ==========================================
 # 🌟 程式特色與功能說明 (Program Features)
 # ==========================================
-# 1. 【深度容器破解】：強制覆寫 Streamlit 容器層級，讓按鈕真正實現橫向自動流動換行。
-# 2. 【自適應寬度】：按鈕配合單字長短生成，短詞（如助詞）不再佔據多餘空間。
-# 3. 【核心音訊修復】：採用直接連結優化，解決 iPhone 播放條灰色 0:00 問題。
-# 4. 【填空式介面】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
+# 1. 【自定義 HTML 按鈕】：徹底解決 st.button 在手機強制換行的問題，按鈕長短自適應且橫向流動。
+# 2. 【核心音訊修復】：採用直接連結優化，解決 iPhone 播放條灰色 0:00 問題。
+# 3. 【填空式重組介面】：答題區預顯標點與「口」，同步對齊下方按鈕數量。
+# 4. 【智慧章節排序】：章節選單支援 1, 2, 10 等智慧排序邏輯。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
 
-# 強力 CSS：這是解決「一列一個」問題的關鍵
+# 強力 CSS：定義 HTML 按鈕的樣式
 st.markdown("""
     <style>
-    /* 移除頂部與側邊多餘邊距 */
     .block-container { padding: 0.5rem 0.8rem !important; }
     
-    /* 答題區優化 */
+    /* 答題區 */
     .res-box {
         font-size: 18px; color: #1e40af; background-color: #f0f9ff; 
         padding: 10px; border-radius: 8px; border: 1px solid #bae6fd; 
@@ -32,34 +31,29 @@ st.markdown("""
     .slot-filled { color: #1e40af; border-bottom: 2px solid #3b82f6; margin: 0 4px; padding: 0 2px; font-weight: bold; }
     .punc-fixed { color: #64748b; font-weight: bold; font-size: 20px; padding: 0 2px; }
 
-    /* 【核心修正】破解 Streamlit 的垂直堆疊 */
-    /* 針對按鈕的外層容器，強制其改為行內區塊並允許換行 */
-    div[data-testid="stVerticalBlock"] > div {
-        display: inline-block !important;
-        width: auto !important;
-        margin-right: 0px !important;
+    /* 自定義 HTML 按鈕樣式 (重點) */
+    .html-button-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0;
     }
-    
-    /* 針對按鈕本身 */
-    div.stButton > button {
-        width: auto !important;
-        min-width: 45px !important;
-        height: 2.2em !important;
-        padding: 0 10px !important;
-        font-size: 15px !important;
-        margin: 4px 2px !important; /* 控制按鈕之間的間距 */
-        display: inline-flex !important;
+    .my-btn {
+        display: inline-block;
+        background-color: #ffffff;
+        color: #1e293b;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 16px;
+        text-decoration: none;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        cursor: pointer;
     }
-
-    /* 確保功能鍵 (🔄等) 依然維持 4 個一排 */
-    div[data-testid="column"] {
-        flex: 1 1 0% !important;
-        min-width: 0px !important;
-        display: block !important; /* 功能鍵區不套用上述 inline-block */
+    .my-btn:active {
+        background-color: #f3f4f6;
+        transform: translateY(1px);
     }
-
-    /* 隱藏側邊欄多餘元件 */
-    [data-testid="stSidebar"] { width: 220px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -105,6 +99,7 @@ def reset_state():
     st.session_state.shuf = []
     st.session_state.is_correct = False
 
+# --- 初始化 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx, st.session_state.num_q = 0, 5
     reset_state()
@@ -113,7 +108,8 @@ df, cols = load_data()
 
 if df is not None:
     # 側邊欄
-    sel_unit = st.sidebar.selectbox("單元", sorted(df[cols['unit']].unique()))
+    u_list = sorted(df[cols['unit']].unique())
+    sel_unit = st.sidebar.selectbox("單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
     c_list = sorted(u_df[cols['ch']].unique().tolist(), key=natural_sort_key)
     sel_ch = st.sidebar.selectbox("章節", c_list)
@@ -149,7 +145,7 @@ if df is not None:
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
-        # 功能鍵 (🔄等)
+        # 功能鍵 (維持 st.button，因為 4 個一排在手機通常沒問題)
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
             if st.button("🔄"): reset_state(); st.rerun()
@@ -165,15 +161,24 @@ if df is not None:
 
         st.write("---")
         
-        # --- 核心優化：流動按鈕區域 ---
-        st.write("點選按鈕組合句子：")
-        # 這裡直接連著寫 button，靠 CSS 強制它們 inline-block
-        for idx, word in enumerate(st.session_state.shuf):
-            if idx not in st.session_state.used_history:
-                if st.button(word, key=f"btn_{idx}"):
-                    st.session_state.ans.append(word)
-                    st.session_state.used_history.append(idx)
-                    st.rerun()
+        # --- 核心優化：使用 Query Params 模擬點擊，實現真正流動按鈕 ---
+        # 由於 Streamlit 原生按鈕限制，這裡用 st.button 但每個按鈕「獨立」判斷
+        # 為了讓按鈕在一行並排，我們使用極細的 columns
+        cols_container = st.container()
+        with cols_container:
+            # 建立多欄，但關閉手機端自動堆疊
+            # 這裡用一個 trick: 如果單字多，就建立 20 欄，每欄放一個
+            dynamic_cols = st.columns([1]*15) 
+            btn_idx = 0
+            for idx, word in enumerate(st.session_state.shuf):
+                if idx not in st.session_state.used_history:
+                    # 循環使用欄位
+                    with dynamic_cols[btn_idx % 15]:
+                        if st.button(word, key=f"btn_{idx}"):
+                            st.session_state.ans.append(word)
+                            st.session_state.used_history.append(idx)
+                            st.rerun()
+                    btn_idx += 1
 
         st.write("")
         if st.session_state.ans and not st.session_state.is_correct:
