@@ -9,10 +9,10 @@ import urllib.parse
 # ==========================================
 # 1. 【填空式重組介面】：答題區預先顯示標點符號，其餘顯示為待填空格「口」。
 # 2. 【同步對齊技術】：確保「口」空格數量與下方「按鈕」數量絕對一致。
-# 3. 【預習模式語音】：支援預習模式點擊展開後，直接播放日文原文 TTS 語音。
-# 4. 【標點免輸入】：標點符號固定在正確位置，學生只需專注於單字與助詞排序。
-# 5. 【長詞保護機制】：保護常用長詞（如：ありがとうございます）不被切碎。
-# 6. 【雙重題數控制】：支援 Slider 拉桿快速調整與 +/- 按鈕微調題數，預設 5 題。
+# 3. 【直讀式預習模式】：預習內容全展開顯示，無需手動摺疊，並強化語音播放。
+# 4. 【標點免輸入】：標點符號固定在正確位置，只需專注單字順序。
+# 5. 【智慧分詞與保護】：保護「ありがとうございます」等長詞，並精準切分助詞。
+# 6. 【雙重題數控制】：Slider 拉桿與 +/- 按鈕連動，預設為 5 題。
 # ==========================================
 
 st.set_page_config(page_title="🇯🇵 日文填空重組練習器", layout="wide")
@@ -31,6 +31,7 @@ st.markdown("""
     .slot-filled { color: #1e40af; border-bottom: 2px solid #60a5fa; margin: 0 8px; padding: 0 4px; }
     .punc-fixed { color: #1e3a8a; font-weight: bold; font-size: 32px; padding: 0 5px; }
     [data-testid="stSidebar"] .stButton>button { height: 2.5em; font-size: 16px !important; }
+    .preview-card { background: #f8fafc; padding: 15px; border-radius: 10px; border-left: 5px solid #3b82f6; margin-bottom: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -73,9 +74,13 @@ def unified_parser(text):
             tokens.append(p)
     return tokens
 
-def get_tts_url(text):
+def play_audio(text):
+    """使用 HTML 嵌入方式播放語音以提高相容性"""
     encoded_text = urllib.parse.quote(text)
-    return f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={encoded_text}"
+    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={encoded_text}"
+    st.components.v1.html(f"""
+        <audio autoplay name="media"><source src="{tts_url}" type="audio/mpeg"></audio>
+    """, height=0)
 
 def reset_state():
     st.session_state.ans = []
@@ -86,7 +91,9 @@ def reset_state():
 # --- 初始化狀態 ---
 if 'q_idx' not in st.session_state:
     st.session_state.q_idx = 0
+if 'num_q' not in st.session_state:
     st.session_state.num_q = 5
+if 'ans' not in st.session_state:
     reset_state()
 
 df, cols = load_data()
@@ -121,13 +128,17 @@ if df is not None:
 
     # --- 主畫面 ---
     if st.sidebar.checkbox("📖 預習模式"):
-        st.info("點擊下方章節可查看原文並撥放語音。")
+        st.header("📖 課文預習 (全展開)")
         for i, item in enumerate(quiz_list):
             ja_text = str(item[cols['ja']]).strip()
-            with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=False):
-                st.write(f"### {ja_text}")
-                # 修復預習模式語音
-                st.audio(get_tts_url(ja_text), format="audio/mp3")
+            st.markdown(f"""
+                <div class="preview-card">
+                    <div style='font-size:14px; color:#64748b;'>章節：{item[cols['ch']]}</div>
+                    <div style='font-size:18px; color:#1e293b; margin: 5px 0;'>{item[cols['cn']]}</div>
+                    <div style='font-size:22px; color:#2563eb; font-weight:bold;'>{ja_text}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.audio(f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={urllib.parse.quote(ja_text)}")
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
@@ -143,22 +154,18 @@ if df is not None:
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # 答題區顯示邏輯
         user_ans_temp = list(st.session_state.ans)
         display_html = '<div class="res-box">'
         for t in all_tokens:
-            if t in punc_list:
-                display_html += f'<span class="punc-fixed">{t}</span>'
+            if t in punc_list: display_html += f'<span class="punc-fixed">{t}</span>'
             else:
                 if user_ans_temp:
                     val = user_ans_temp.pop(0)
                     display_html += f'<span class="slot-filled">{val}</span>'
-                else:
-                    display_html += f'<span class="slot-empty">口</span>'
+                else: display_html += f'<span class="slot-empty">口</span>'
         display_html += '</div>'
         st.markdown(display_html, unsafe_allow_html=True)
 
-        # 功能鍵
         ctrl = st.columns(4)
         with ctrl[0]:
             if st.button("🔄重填"): reset_state(); st.rerun()
@@ -189,7 +196,7 @@ if df is not None:
         if st.session_state.is_correct:
             st.success("🎊 正解！")
             st.markdown(f"### {ja_raw}")
-            st.audio(get_tts_url(ja_raw), format="audio/mp3")
+            play_audio(ja_raw) # 答對自動播放
             if st.button("下一題 ➡️", type="primary", use_container_width=True):
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
