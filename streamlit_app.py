@@ -1,12 +1,12 @@
 """
 ================================================================
-【日文結構練習器 - v6.3 操作介面優化版】
+【技術演進與邏輯追蹤表 - v6.4 側邊欄救援版】
 ----------------------------------------------------------------
 更新日誌：
-1. 語意化按鈕：功能鍵名稱清晰化 (上一題、下一題、重填、退回)。
-2. 視覺區隔：利用 CSS 強化按鈕與答案格的視覺邊界。
-3. 手機優先：針對 iPhone 直立屏進行最終比例微調。
-4. 側邊欄守護：不影響 Streamlit 原生側邊欄導航功能。
+1. 側邊欄修復：移除全局 [data-testid="column"] 的強制寬度設定，
+   改用精確的屬性選擇器，確保左側導航欄不被隱藏或縮小。
+2. 併排邏輯：鎖定練習區的按鈕容器，讓單字按鈕在手機直立時自動併排。
+3. 實體按鈕：維持原生 st.button，確保點擊反應與狀態穩定。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -19,49 +19,48 @@ import requests
 import base64
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.3", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v6.4", layout="wide")
 
-# --- 2. 精準 CSS (針對單字併排與介面壓縮) ---
+# --- 2. 精準 CSS (只針對內容區，守護側邊欄) ---
 st.markdown("""
     <style>
-    /* 1. 答案區：扁平化格位 */
+    /* 答案區展示：格位小一點 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
-        background-color: #ffffff; padding: 12px; 
+        background-color: #ffffff; padding: 10px; 
         border-radius: 12px; border: 1.5px solid #e5e7eb; 
-        min-height: 50px; align-items: center; margin-bottom: 15px;
+        min-height: 50px; align-items: center; margin-bottom: 12px;
     }
     .word-slot { 
-        min-width: 32px; height: 26px; border-bottom: 2px solid #1cb0f6; 
+        min-width: 30px; height: 26px; border-bottom: 2px solid #1cb0f6; 
         display: flex; align-items: center; justify-content: center; 
-        font-size: 17px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
+        font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
-    
-    /* 2. 單字池容器：強制併排換行 */
-    .st-emotion-cache-12w0qpk { 
+
+    /* 重要：只針對主畫面中的水平塊進行 flex 化，避免影響側邊欄 */
+    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-wrap: wrap !important;
         gap: 6px !important;
-    }
-    
-    /* 3. 按鈕樣式：實體立體感 */
-    div.stButton > button {
-        border-radius: 10px !important;
-        border: 1px solid #e5e7eb !important;
-        border-bottom: 3.5px solid #e5e7eb !important;
-        padding: 6px 12px !important;
-        font-size: 15px !important;
-        font-weight: bold !important;
-        width: auto !important;
-    }
-    
-    /* 4. 控制區按鈕字體稍微縮小以利併排 */
-    [data-testid="column"] div.stButton > button {
-        font-size: 14px !important;
-        padding: 4px 8px !important;
+        flex-direction: row !important;
     }
 
-    .block-container { padding-top: 1rem !important; }
+    /* 讓按鈕寬度隨文字長度變化，且不佔滿全螢幕 */
+    div.stButton > button {
+        width: auto !important;
+        min-width: 45px !important;
+        padding: 5px 12px !important;
+        border-radius: 8px !important;
+        border-bottom: 3.5px solid #e5e7eb !important;
+        font-weight: bold !important;
+    }
+    
+    /* 側邊欄保護：強制保證側邊欄在手機上具有正確的觸發按鈕顏色 */
+    [data-testid="stSidebar"] {
+        min-width: 250px !important;
+    }
+
+    .block-container { padding: 1rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     </style>
 """, unsafe_allow_html=True)
@@ -94,7 +93,7 @@ def get_audio_html(text):
         res = requests.get(tts_url)
         if res.status_code == 200:
             b64 = base64.b64encode(res.content).decode()
-            return f'<audio controls style="width:100%; height:38px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:35px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
@@ -126,7 +125,6 @@ if df is not None:
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if preview_mode:
-        st.subheader("📖 預習清單")
         for i, item in enumerate(quiz_list):
             st.write(f"**{i+1}. {item[cols['cn']]}**\n{item[cols['ja']]}")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
@@ -139,8 +137,8 @@ if df is not None:
         word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
         
         if not st.session_state.shuf:
-            random.seed(st.session_state.q_idx)
             st.session_state.shuf = list(word_tokens)
+            random.seed(st.session_state.q_idx)
             random.shuffle(st.session_state.shuf)
 
         st.caption(f"第 {st.session_state.q_idx + 1} 題 / 共 {len(quiz_list)} 題")
@@ -158,9 +156,9 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字選擇池 (利用 Flexbox Wrap 併排)
-        st.write("▼ 請選擇單字按鈕：")
-        # 直接生成按鈕，不使用 columns 以避免手機斷行
+        # B. 單字池 (併排按鈕)
+        st.write("▼ 請點擊單字進行重組：")
+        # 直接使用 st.button，不外加 columns 以防手機斷行
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
@@ -168,9 +166,8 @@ if df is not None:
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 功能控制鍵 (置底且名稱清晰)
+        # C. 功能控制鍵 (中文註明清楚)
         st.write("---")
-        # 這裡的 columns 僅用於功能鍵分配，CSS 已設定強制併排
         nav_cols = st.columns(4)
         if nav_cols[0].button("⏮ 上一題"): 
             st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
