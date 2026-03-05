@@ -39,41 +39,41 @@ def load_data():
 
 def word_splitter(text):
     """
-    強化版分詞器：
-    1. 移除所有空白（全形與半形）。
-    2. 保護「どのくらい」、「ありがとうございます」等常用語。
-    3. 確實切割助詞與標點符號。
+    終極分詞器：
+    1. 暴力移除所有類型的空白字元。
+    2. 保護長詞，精準切割助詞。
+    3. 最終過濾，確保無空按鈕。
     """
-    # [步驟 1] 徹底移除所有空白字元
-    text = re.sub(r'[\s\u3000]', '', text)
+    # [步驟 1] 使用正則移除「所有」空白，包含全形、半形、換行、定位符等
+    text = re.sub(r'\s+', '', text)
+    text = text.replace('\u3000', '') # 額外處理全形空格
     
-    # [步驟 2] 保護名單：防止被助詞邏輯切碎
+    # [步驟 2] 保護長單字
     protected = [
         'ありがとうございます', 'ありがとうございました', 
         'どのくらい', 'どのぐらい', 'すみません', 'ごめんなさい', 
         'おはようございます', '失礼します', 'お疲れ様です'
     ]
     for w in protected:
-        # 使用特殊標記保護
         text = text.replace(w, f" __{w}__ ")
 
-    # [步驟 3] 定義拆分點：助詞與標點
-    # 將長度較長的詞（如「から」）放在前面，避免被先切成單個字
+    # [步驟 3] 定義拆分點
     particles = ['から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'か']
     punctuations = ['、', '。', '！', '？']
-    
-    # 建立正則表達式
     pattern = f"({'|'.join(re.escape(p) for p in (particles + punctuations))})"
     
     # [步驟 4] 執行拆分
     raw_parts = re.split(pattern, text)
     
-    # [步驟 5] 嚴格清理結果：過濾掉空值，還原被保護的單字
+    # [步驟 5] 終極過濾：長度必須大於 0 且不能是純空白
     tokens = []
     for p in raw_parts:
-        p_clean = p.strip()
-        if not p_clean: continue # 絕對不允許空白進入
+        # 移除任何殘留的極小空格
+        p_clean = p.strip().replace(' ', '').replace('\u3000', '')
         
+        if not p_clean: # 如果是空的，絕對不要
+            continue
+            
         if p_clean.startswith("__") and p_clean.endswith("__"):
             tokens.append(p_clean.replace("__", ""))
         else:
@@ -95,7 +95,6 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # --- 側邊欄 ---
     st.sidebar.header("⚙️ 練習設定")
     u_list = sorted(df[cols['unit']].unique())
     sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
@@ -124,7 +123,6 @@ if df is not None:
         reset_state()
         st.rerun()
 
-    # --- 主測驗區 ---
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
@@ -158,8 +156,9 @@ if df is not None:
 
         st.write("---")
         b_cols = st.columns(2) 
+        # 這裡也加一道保險：如果 t 為空，就不渲染按鈕
         for i, t in enumerate(st.session_state.shuf):
-            if i not in st.session_state.used_history:
+            if t and i not in st.session_state.used_history:
                 with b_cols[i % 2]:
                     if st.button(t, key=f"btn_{i}"):
                         st.session_state.ans.append(t)
@@ -168,7 +167,7 @@ if df is not None:
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                clean_target = re.sub(r'[\s\u3000]', '', ja_raw)
+                clean_target = re.sub(r'\s+', '', ja_raw).replace('\u3000', '')
                 if "".join(st.session_state.ans) == clean_target:
                     st.session_state.is_correct = True; st.rerun()
                 else: 
