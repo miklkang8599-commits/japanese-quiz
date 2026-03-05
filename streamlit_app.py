@@ -1,14 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v6.6 內嵌設定版】
+【技術演進與邏輯追蹤表 - v6.7 邏輯順序優化版】
 ----------------------------------------------------------------
-1. 側邊欄失效解決：
-   - 徹底放棄 Sidebar 導航，改將設定選單「內嵌」在主畫面前端。
-   - 使用 st.expander (預設收合)，解決手機看不到側邊欄的問題。
-2. 功能鍵順序鎖定：
+1. 設定選單優化：
+   - 依照要求將「題數調整 (少題/多題)」移至「預習清單開關」上方。
+   - 流程變更：選擇範圍 -> 決定題數 -> (選用) 預習。
+2. 功能鍵順序固定：
    - 退回 -> 重填 -> 上一題 -> 下一題。
-3. 併排穩定性：
-   - 移除所有導致側邊欄消失的全局 CSS，確保 UI 100% 穩定。
+3. 側邊欄替代方案：
+   - 沿用 v6.6 內嵌式 Expander 設定區，保證手機直立操作性。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -21,11 +21,10 @@ import requests
 import base64
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="🇯🇵 日文重組 v6.6", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v6.7", layout="wide")
 
 st.markdown("""
     <style>
-    /* 答案區展示：扁平簡潔 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; 
         background-color: #f9fafb; padding: 10px; 
@@ -37,16 +36,12 @@ st.markdown("""
         display: flex; align-items: center; justify-content: center; 
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
-
-    /* 單字按鈕池：手機併排核心 (不使用 columns) */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-wrap: wrap !important;
         flex-direction: row !important;
         gap: 5px !important;
     }
-
-    /* 原生按鈕視覺優化 */
     div.stButton > button {
         width: auto !important;
         min-width: 45px !important;
@@ -55,13 +50,10 @@ st.markdown("""
         border-bottom: 3.5px solid #e5e7eb !important;
         font-weight: bold !important;
     }
-    
-    /* 底部功能控制列 */
     .control-row [data-testid="column"] {
         flex: 1 1 0% !important;
         min-width: 0px !important;
     }
-    
     .block-container { padding: 0.5rem 0.5rem !important; }
     [data-testid="stHeader"] { display: none; }
     </style>
@@ -116,18 +108,25 @@ if 'ans' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
-    # 【重點：內嵌式設定選單】
+    # --- 【練習設定：順序優化版】 ---
     with st.expander("⚙️ 練習設定與單元選擇"):
         unit_list = sorted(df[cols['unit']].astype(str).unique())
         sel_unit = st.selectbox("1. 選擇單元", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
         sel_start_ch = st.selectbox("2. 起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
-        preview_mode = st.checkbox("📖 開啟預習清單")
         
+        # 【題數調整：移至預習上方】
+        st.write(f"當前設定題數：{st.session_state.num_q}")
         c_set1, c_set2 = st.columns(2)
-        if c_set1.button("➖ 少題"): st.session_state.num_q = max(1, st.session_state.num_q-1); st.rerun()
-        if c_set2.button("➕ 多題"): st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1); st.rerun()
+        if c_set1.button("➖ 少題"): 
+            st.session_state.num_q = max(1, st.session_state.num_q-1)
+            st.rerun()
+        if c_set2.button("➕ 多題"): 
+            st.session_state.num_q = min(len(filtered_df), st.session_state.num_q+1)
+            st.rerun()
+            
+        preview_mode = st.checkbox("📖 開啟預習清單")
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
@@ -151,19 +150,17 @@ if df is not None:
         st.caption(f"Q{st.session_state.q_idx + 1} | 共 {len(quiz_list)} 題")
         st.info(f"💡 {cn_text}")
 
-        # A. 答案展示區
-        curr_ans_copy = list(st.session_state.ans)
+        ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in sentence_struct:
             if s['type'] == 'punc': 
                 ans_html += f'<span style="color:#94a3b8;">{s["content"]}</span>'
             else:
-                val = curr_ans_copy.pop(0) if curr_ans_copy else ""
+                val = ans_copy.pop(0) if ans_copy else ""
                 ans_html += f'<div class="word-slot">{val}</div>'
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字選擇
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
@@ -171,7 +168,6 @@ if df is not None:
                     st.session_state.used_history.append(idx)
                     st.rerun()
 
-        # C. 功能按鈕 (依照新順序：退回 -> 重填 -> 上一題 -> 下一題)
         st.write("---")
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         n1, n2, n3, n4 = st.columns(4)
