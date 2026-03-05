@@ -3,9 +3,10 @@ import pandas as pd
 import random
 import re
 
-st.set_page_config(page_title="🇯🇵 日文重組 (精準修復版)", layout="wide")
+# 設定網頁標題
+st.set_page_config(page_title="🇯🇵 日文全方位重組練習器", layout="wide")
 
-# CSS 優化：增加字體間距，避免重疊
+# CSS 優化：增加字體間距，避免手機端點選太擠
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 10px; height: 3.2em; font-size: 18px !important; margin-bottom: 8px; }
@@ -14,11 +15,11 @@ st.markdown("""
         padding: 20px; border-radius: 12px; border: 2px dashed #60a5fa; 
         min-height: 100px; margin-bottom: 15px; line-height: 1.8; letter-spacing: 1px;
     }
-    .punc-hint { color: #94a3b8; font-weight: bold; padding: 0 4px; font-size: 28px; }
     [data-testid="stSidebar"] .stButton>button { height: 2.5em; font-size: 16px !important; }
     </style>
 """, unsafe_allow_html=True)
 
+# --- 1. 設定 Google Sheets 資訊 ---
 SHEET_ID = "12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA"
 GID = "1337973082"
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
@@ -38,32 +39,20 @@ def load_data():
 
 def word_splitter(text):
     """
-    精準分詞邏輯：
-    1. 先把所有標點符號拔掉。
-    2. 只針對指定的助詞進行切分，且確保不傷害到單字本體。
+    全方位拆解邏輯：
+    1. 識別助詞並拆開。
+    2. 識別標點符號（、。！？）並拆開。
     """
-    # 徹底移除所有日文標點
-    text = re.sub(r'[、。！？\s]', '', text)
-    # 定義助詞
+    text = text.strip()
     particles = ['は', 'が', 'を', 'に', 'へ', 'と', 'も', 'で', 'の', 'から', 'まで']
-    # 建立正則：在助詞後面切一刀，但要保留助詞
-    pattern = f"([^particles]+(?:{'|'.join(particles)})?)"
-    # 這裡改用更簡單的邏輯：先按助詞切，再過濾
-    regex = f"(.*?)(?:{'|'.join(particles)}|$)"
-    tokens = []
-    temp_text = text
+    # 建立正則表達式，同時捕捉助詞與標點符號
+    # 用括號捕捉，確保 re.split 會保留這些分隔符號
+    pattern = f"({'|'.join(particles)}|、|。|！|？)"
     
-    # 簡單但強大的助詞切分法
-    p_pattern = f"({'|'.join(particles)})"
-    parts = re.split(p_pattern, text)
-    # parts 會像 ['駅', 'の', '出口', 'が', '']
-    combined = []
-    for i in range(0, len(parts)-1, 2):
-        combined.append(parts[i] + parts[i+1])
-    if len(parts) % 2 != 0 and parts[-1]:
-        combined.append(parts[-1])
-        
-    return [c for c in combined if c.strip()]
+    raw_parts = re.split(pattern, text)
+    # 過濾空字串
+    tokens = [p for p in raw_parts if p and p.strip()]
+    return tokens
 
 def reset_state():
     st.session_state.ans = []
@@ -79,19 +68,18 @@ if 'q_idx' not in st.session_state:
 df, cols = load_data()
 
 if df is not None:
+    # --- 側邊欄 ---
     st.sidebar.header("⚙️ 練習設定")
-    # 修正連動邏輯
     u_list = sorted(df[cols['unit']].unique())
-    sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list, key="u_sel")
-    
+    sel_unit = st.sidebar.selectbox("1. 選擇單元", u_list)
     u_df = df[df[cols['unit']] == sel_unit]
+    
     c_list = sorted(u_df[cols['ch']].unique())
-    sel_start_ch = st.sidebar.selectbox("2. 起始章節", c_list, key="c_sel")
+    sel_start_ch = st.sidebar.selectbox("2. 起始章節", c_list)
     
     filtered_df = u_df[u_df[cols['ch']] >= sel_start_ch]
     max_q = len(filtered_df)
 
-    # 題數按鈕
     st.sidebar.write(f"3. 練習題數： **{st.session_state.num_q}**")
     c_min, c_pls = st.sidebar.columns(2)
     with c_min:
@@ -104,7 +92,6 @@ if df is not None:
     if st.session_state.num_q > max_q: st.session_state.num_q = max_q
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # 切換條件重置
     ckey = f"{sel_unit}-{sel_start_ch}-{st.session_state.num_q}"
     if 'lkey' not in st.session_state or st.session_state.lkey != ckey:
         st.session_state.lkey = ckey
@@ -112,6 +99,7 @@ if df is not None:
         reset_state()
         st.rerun()
 
+    # --- 主畫面 ---
     if st.sidebar.checkbox("📖 預習模式"):
         for item in quiz_list:
             with st.expander(f"【{item[cols['ch']]}】{item[cols['cn']]}", expanded=True):
@@ -129,25 +117,9 @@ if df is not None:
         st.subheader(f"Q {st.session_state.q_idx + 1} / {len(quiz_list)}")
         st.info(f"💡 {q[cols['cn']]}")
 
-        # 顯示邏輯：標點符號不參與填位計算
-        parts = re.split(r'([、。！？])', ja_raw)
-        u_ans = list(st.session_state.ans)
-        html = ""
-        for p in parts:
-            if p in ['、', '。', '！', '？']:
-                html += f'<span class="punc-hint">{p}</span>'
-            elif p.strip():
-                # 該片段原本應有的單字數
-                needed = len(word_splitter(p))
-                chunk = ""
-                for _ in range(needed):
-                    if u_ans: chunk += u_ans.pop(0)
-                html += chunk
-        
-        if not st.session_state.ans:
-            html = f'<span style="color:#94a3b8; font-size:16px;">請選取單字... </span>' + html
-        
-        st.markdown(f'<div class="res-box">{html}</div>', unsafe_allow_html=True)
+        # 拼湊區 (直接顯示使用者選擇的內容，無標點預顯)
+        user_ans = "".join(st.session_state.ans)
+        st.markdown(f'<div class="res-box">{user_ans if user_ans else "請依序點選單字、助詞與標點..."}</div>', unsafe_allow_html=True)
 
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
@@ -161,6 +133,7 @@ if df is not None:
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
 
         st.write("---")
+        # 按鈕顯示 (手機建議 2 欄)
         b_cols = st.columns(2) 
         for i, t in enumerate(st.session_state.shuf):
             if i not in st.session_state.used_history:
@@ -172,10 +145,11 @@ if df is not None:
 
         if st.session_state.ans and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                target = re.sub(r'[、。！？\s]', '', ja_raw)
-                if "".join(st.session_state.ans) == target:
+                # 完全對比 (包含標點)
+                if "".join(st.session_state.ans) == ja_raw.replace(" ",""):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: 
+                    st.error("順序不對喔！別忘了標點符號的位置。")
 
         if st.session_state.is_correct:
             st.success(f"🎊 正解！")
