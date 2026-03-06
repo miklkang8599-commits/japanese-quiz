@@ -1,12 +1,12 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v10.1 語法與佈局最終修正】
+【技術演進與邏輯追蹤表 - v11.0 回歸簡約版】
 ----------------------------------------------------------------
-1. 錯誤修正：
-   - 修復 v10.0 第 197 行的 SyntaxError (q = 賦值不全)。
-2. 佈局架構：
-   - 持續使用 .control-grid (Flexbox) 確保四個控制鍵絕對等寬。
-   - 使用 .main-action-area 確保主操作按鈕文字不縮小、不消失。
+1. 視覺回歸：
+   - 移除所有複雜的 Flexbox 網格強制設定。
+   - 使用最基本的 st.columns 佈局，讓按鈕回歸自然大小。
+2. 標籤簡化：
+   - 恢復簡單的文字與圖示組合，不再使用長標籤。
 3. 核心鎖定：
    - 預設 5 題、自然排序、索引重置 (平假名對位正確)。
 ----------------------------------------------------------------
@@ -20,8 +20,8 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與進階 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v10.1", layout="wide")
+# --- 1. 頁面配置與基礎 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v11.0", layout="wide")
 
 st.markdown("""
     <style>
@@ -29,62 +29,25 @@ st.markdown("""
     [data-testid="stHeader"] { display: none; }
     
     .res-box { 
-        display: flex; flex-wrap: wrap; gap: 4px; background-color: #ffffff; padding: 10px; 
-        border-radius: 10px; border: 1.5px solid #e5e7eb; min-height: 42px; 
-        align-items: center; justify-content: center; box-shadow: 0 3px 0 #e5e7eb; margin-bottom: 5px;
+        display: flex; flex-wrap: wrap; gap: 6px; background-color: #ffffff; padding: 10px; 
+        border-radius: 10px; border: 2px solid #e5e7eb; min-height: 45px; 
+        align-items: center; justify-content: center; box-shadow: 0 3px 0 #e5e7eb; margin-bottom: 10px;
     }
     .word-slot { 
-        min-width: 25px; height: 22px; border-bottom: 2px solid #afafaf; 
-        display: flex; align-items: center; justify-content: center; 
-        font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
+        min-width: 25px; border-bottom: 2px solid #afafaf; 
+        text-align: center; font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 所有按鈕的基礎：強制顯示文字且維持高度 */
+    /* 單字按鈕樣式 */
     div.stButton > button {
         border-radius: 12px !important;
         font-weight: bold !important;
-        white-space: nowrap !important;
         background-color: white !important;
         border: 2px solid #e5e7eb !important;
         border-bottom: 4px solid #e5e7eb !important;
-        transition: all 0.1s;
-        min-height: 48px !important;
-        width: 100% !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    /* 單字按鈕池 */
-    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
-        display: flex !important; flex-wrap: wrap !important;
-        flex-direction: row !important; gap: 6px !important; justify-content: center !important;
-    }
-
-    /* 系統控制區四個按鈕強制平分寬度 */
-    .control-grid {
-        display: flex !important;
-        justify-content: space-between !important;
-        gap: 4px !important;
-        margin-bottom: 8px !important;
     }
     
-    .control-row [data-testid="column"] {
-        flex: 1 1 0% !important;
-    }
-
-    /* 主按鈕 (檢查/下一題) 強化 */
-    .main-action-area button {
-        font-size: 16px !important;
-        min-height: 55px !important;
-        border: 2px solid #1cb0f6 !important;
-        border-bottom: 4px solid #1cb0f6 !important;
-        color: #1cb0f6 !important;
-    }
-
-    .num-display { text-align: center; font-size: 18px; font-weight: bold; color: #1cb0f6; line-height: 35px; }
-    .hint-text { font-size: 11px; color: #999; text-align: center; margin-bottom: 2px; }
-    .stInfo { padding: 8px !important; border-radius: 10px; font-size: 14px; margin-bottom: 8px; }
+    .stInfo { border-radius: 10px; font-size: 15px; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -128,16 +91,15 @@ def get_audio_html(text):
         res = requests.get(tts_url)
         if res.status_code == 200:
             b64 = base64.b64encode(res.content).decode()
-            return f'<audio controls style="width:100%; height:30px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            return f'<audio controls style="width:100%; height:32px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: pass
     return ""
 
-# --- 3. 初始化 ---
+# --- 3. 初始化 (預設 5 題) ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: st.session_state.ans = []
 if 'used_history' not in st.session_state: st.session_state.used_history = []
-if 'shuf' not in st.session_state: st.session_state.shuf = []
 if 'is_correct' not in st.session_state: st.session_state.is_correct = False
 if 'curr_q_data' not in st.session_state: st.session_state.curr_q_data = None
 if 'last_config' not in st.session_state: st.session_state.last_config = ""
@@ -147,16 +109,12 @@ df, cols = load_data()
 if df is not None:
     with st.expander("⚙️ 練習設定", expanded=False):
         unit_list = sorted(df[cols['unit']].astype(str).unique(), key=natural_sort_key)
-        sel_unit = st.selectbox("單元選擇", unit_list)
+        sel_unit = st.selectbox("選擇單元", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
         ch_list = sorted(unit_df[cols['ch']].astype(str).unique(), key=natural_sort_key)
         sel_start_ch = st.selectbox("起始章節", ch_list)
         
-        st.write("題數調整：")
-        c1, c2, c3 = st.columns([1, 1, 1])
-        if c1.button("➖"): st.session_state.num_q = max(1, st.session_state.num_q - 1)
-        with c2: st.markdown(f'<div class="num-display">{st.session_state.num_q}</div>', unsafe_allow_html=True)
-        if c3.button("➕"): st.session_state.num_q = min(50, st.session_state.num_q + 1)
+        st.session_state.num_q = st.number_input("練習題數", min_value=1, value=st.session_state.num_q)
         
         current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
         if st.session_state.last_config != current_config:
@@ -171,15 +129,13 @@ if df is not None:
 
     if preview_mode:
         for i, item in enumerate(quiz_list):
-            st.subheader(f"No. {i+1}")
-            st.write(f"**中文：** {item[cols['cn']]}")
-            st.write(f"**日文：** {item[cols['ja']]}")
+            st.write(f"**{i+1}. {item[cols['cn']]}**")
+            st.write(f"{item[cols['ja']]}")
             if cols['kana'] and pd.notna(item.get(cols['kana'])):
-                st.write(f"**平假名：** {item[cols['kana']]}")
+                st.write(f"（{item[cols['kana']]}）")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True); st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
-        # 【修正語法錯誤】確保 curr_q_data 封裝邏輯正確
         if st.session_state.curr_q_data is None:
             q_raw = quiz_list[st.session_state.q_idx]
             ja_txt = str(q_raw[cols['ja']]).strip()
@@ -193,59 +149,52 @@ if df is not None:
             }
 
         q = st.session_state.curr_q_data
-        st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {q['cn']}")
+        st.info(f"Q{st.session_state.q_idx + 1} | {q['cn']}")
 
         # A. 答案展示區
-        ans_html = '<div class="res-box">'
         curr_ans_copy = list(st.session_state.ans)
+        ans_html = '<div class="res-box">'
         for s in q['struct']:
-            if s['type'] == 'punc': ans_html += f'<span style="color:#ccc;">{s["content"]}</span>'
+            if s['type'] == 'punc': ans_html += f'<span>{s["content"]}</span>'
             else:
                 val = curr_ans_copy.pop(0) if curr_ans_copy else ""
                 ans_html += f'<div class="word-slot">{val}</div>'
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        st.markdown('<div class="hint-text">▼ 點選單字按鈕</div>', unsafe_allow_html=True)
-        # 單字池
+        # B. 單字池
+        st.caption("▼ 請點選單字")
+        cols_words = st.columns(len(q['shuf']))
         for idx, t in enumerate(q['shuf']):
             if idx not in st.session_state.used_history:
-                if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
+                if cols_words[idx].button(t, key=f"w_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # B. 系統控制區 (Flexbox 強制等寬)
-        st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
-        st.markdown('<div class="control-row">', unsafe_allow_html=True)
-        c_cols = st.columns(4)
-        if c_cols[0].button("⬅ 退回一格", key="c_b"):
+        # C. 系統控制
+        st.caption("▼ 系統操作")
+        c_nav = st.columns(4)
+        if c_nav[0].button("⬅ 退回"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        if c_cols[1].button("🔄 全部重填", key="c_r"): reset_state(); st.rerun()
-        if c_cols[2].button("⏮ 上一題", key="c_p"): 
+        if c_nav[1].button("🔄 重填"): reset_state(); st.rerun()
+        if c_nav[2].button("⏮ 上一題"): 
             st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
-        if c_cols[3].button("⏭ 下一題", key="c_n"): 
+        if c_nav[3].button("⏭ 下一題"): 
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
-        # C. 檢查與導航
-        st.write(" ")
+        # D. 檢查與結果
         if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
-            st.markdown('<div class="main-action-area">', unsafe_allow_html=True)
-            if st.button("🔍 檢查答案是否正確", type="primary", use_container_width=True, key="m_check"):
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(q['tokens']):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！💡")
-            st.markdown('</div>', unsafe_allow_html=True)
+                else: st.error("順序不對喔！")
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
-            if q['kana'] and pd.notna(q['kana']):
-                st.markdown(f"**平假名：** {q['kana']}")
+            if q['kana']: st.write(f"讀音：{q['kana']}")
             st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
-            st.markdown('<div class="main-action-area">', unsafe_allow_html=True)
-            if st.button("👉 進入下一題練習", type="primary", use_container_width=True, key="m_next"): 
+            if st.button("👉 下一題", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
     else:
-        st.balloons(); st.success("練習完成！")
-        if st.button("🔄 重新開始練習"): st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.balloons(); st.success("完成！")
+        if st.button("從頭開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
