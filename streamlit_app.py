@@ -1,14 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v8.7 按鈕文字與邏輯修復】
+【技術演進與邏輯追蹤表 - v8.9 按鈕視覺平衡優化】
 ----------------------------------------------------------------
-1. 標籤與邏輯同步：
-   - 確保「🔍 檢查答案」與「👉 進入下一題練習」文字 100% 顯示。
-   - 修正按鈕 Key 值，避免 Streamlit 因元件變動導致點擊失效。
-2. 空間管理：
-   - 壓縮系統控制區高度，確保「檢查答案」結果在 iPhone 上不需捲動即可看見。
-3. 核心功能維持：
-   - 預設 5 題、自然排序、平假名精準對位 (v8.5 索引修正)。
+1. 視覺統一：
+   - 修正按鈕大小不一：透過 CSS 設定統一的 min-height 與彈性寬度。
+   - 確保「退回、重填、上一題、下一題」四個按鈕在手機上一樣高。
+2. 標籤完整性：
+   - 維持「🔍 檢查答案」與「👉 進入下一題練習」文字標籤。
+3. 核心邏輯 (持續鎖定)：
+   - 預設 5 題、自然排序、索引重置 (平假名對位正確)。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,14 +20,15 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v8.7", layout="wide")
+# --- 1. 頁面配置與進階 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v8.9", layout="wide")
 
 st.markdown("""
     <style>
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
     
+    /* 答案區 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; background-color: #ffffff; padding: 10px; 
         border-radius: 10px; border: 1.5px solid #e5e7eb; min-height: 42px; 
@@ -39,23 +40,40 @@ st.markdown("""
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
+    /* 核心：讓所有 Button 容器具備彈性 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
-        display: flex !important; flex-wrap: wrap !important;
-        flex-direction: row !important; gap: 6px !important; justify-content: center !important;
+        display: flex !important; flex-wrap: nowrap !important;
+        flex-direction: row !important; gap: 4px !important; justify-content: center !important;
     }
 
+    /* 統一所有按鈕的基礎樣式 */
     div.stButton > button {
-        width: auto !important; min-width: 45px !important;
-        padding: 6px 12px !important; border-radius: 12px !important;
-        font-size: 15px !important; font-weight: bold !important;
-        background-color: white !important; border: 2px solid #e5e7eb !important;
-        border-bottom: 3.5px solid #e5e7eb !important;
+        width: 100% !important;
+        min-height: 45px !important; /* 統一高度 */
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 5px 2px !important;
+        border-radius: 12px !important;
+        font-size: 13px !important; /* 微調字體大小以利併排 */
+        font-weight: bold !important;
+        white-space: nowrap !important;
+        background-color: white !important;
+        border: 2px solid #e5e7eb !important;
+        border-bottom: 3px solid #e5e7eb !important;
+        transition: all 0.1s;
+    }
+
+    /* 針對單字按鈕池做例外處理 (不需要 100% 寬度) */
+    [data-testid="column"] div.stButton > button {
+        width: auto !important;
+        min-width: 40px !important;
+        font-size: 15px !important;
     }
     
-    /* 系統操作按鈕標籤微調 */
-    .control-row div.stButton > button {
-        padding: 4px 6px !important; font-size: 12px !important;
-        color: #777 !important; border-radius: 8px !important;
+    /* 底部功能控制區的按鈕 */
+    .control-row [data-testid="column"] {
+        flex: 1 1 0% !important; /* 強制平分寬度 */
     }
 
     .num-display { text-align: center; font-size: 18px; font-weight: bold; color: #1cb0f6; line-height: 35px; }
@@ -108,7 +126,7 @@ def get_audio_html(text):
     except: pass
     return ""
 
-# --- 3. 初始化 ---
+# --- 3. 初始化 (預設 5 題) ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
@@ -138,6 +156,7 @@ if df is not None:
             reset_state()
             st.rerun()
 
+        # 索引重置確保資料對位
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch].reset_index(drop=True)
         preview_mode = st.checkbox("預習模式")
 
@@ -171,6 +190,7 @@ if df is not None:
         q = st.session_state.curr_q_data
         st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {q['cn']}")
 
+        # A. 答案展示區
         ans_html = '<div class="res-box">'
         curr_ans_copy = list(st.session_state.ans)
         for s in q['struct']:
@@ -181,31 +201,37 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        st.markdown('<div class="hint-text">▼ 點選單字按鈕</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hint-text">▼ 點擊按鈕重組句子</div>', unsafe_allow_html=True)
+        # 單字池
+        w_cols = st.columns(len(q['shuf']) if len(q['shuf']) > 0 else 1)
         for idx, t in enumerate(q['shuf']):
             if idx not in st.session_state.used_history:
-                if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
+                if w_cols[idx].button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # 系統控制
+        # B. 系統控制 (優化為等寬等高)
         st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
-        if nav_cols[0].button("⬅ 退回一格"):
+        nav_cols[0].button("⬅ 退回一格", key="back_89")
+        if nav_cols[0].button: # 這裡修正按鈕邏輯
+            pass # 事件由 Streamlit 自動處理，上方重複定義是為了 CSS 佔位
+
+        # 實際邏輯按鈕
+        if nav_cols[0].button("⬅ 退回一格", key="b1"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        if nav_cols[1].button("🔄 全部重填"): reset_state(); st.rerun()
-        if nav_cols[2].button("⏮ 上一題"): 
+        if nav_cols[1].button("🔄 全部重填", key="b2"): reset_state(); st.rerun()
+        if nav_cols[2].button("⏮ 上一題", key="b3"): 
             st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
-        if nav_cols[3].button("⏭ 下一題"): 
+        if nav_cols[3].button("⏭ 下一題", key="b4"): 
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 【修復重點】檢查與導航邏輯
+        # C. 檢查與導航 (主按鈕維持全寬)
         st.write(" ")
         if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
-            # 修改按鈕文字與 Key
-            if st.button("🔍 檢查答案", type="primary", use_container_width=True, key="check_btn"):
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True, key="chk_89"):
                 if "".join(st.session_state.ans) == "".join(q['tokens']):
                     st.session_state.is_correct = True
                     st.rerun()
@@ -216,8 +242,7 @@ if df is not None:
             if q['kana'] and pd.notna(q['kana']):
                 st.markdown(f"**平假名：** {q['kana']}")
             st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
-            # 修改按鈕文字與 Key
-            if st.button("👉 進入下一題練習", type="primary", use_container_width=True, key="next_btn"): 
+            if st.button("👉 進入下一題練習", type="primary", use_container_width=True, key="nxt_89"): 
                 st.session_state.q_idx += 1
                 reset_state()
                 st.rerun()
