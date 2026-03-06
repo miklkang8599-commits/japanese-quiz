@@ -1,13 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v7.6 比例與預設值最終修正】
+【技術演進與邏輯追蹤表 - v7.7 章節自然排序修正】
 ----------------------------------------------------------------
-1. 修正項目：
-   - 預設題數：正式鎖定 st.session_state.num_q = 5。
-   - 比例調整：設定區的加減按鈕尺寸從巨大縮小為精緻方塊。
-2. 佈局邏輯：
-   - 使用 CSS 針對 .setting-btn 進行局部縮小，不影響主單字按鈕。
-   - 維持退回、重填、上題、下題的中文標籤。
+1. 排序邏輯優化：
+   - 修正起始章節排序：使用 re.sub 提取數字進行排序，確保 1 < 2 < 10。
+2. 穩定性維持：
+   - 預設練習題數鎖定為 5 題。
+   - 保留 v7.6 的精緻型加減按鈕（35px）。
+   - 保留文字標籤（退回、重填、上題、下題）。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,7 +20,7 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v7.6", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v7.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -45,7 +45,7 @@ st.markdown("""
         flex-direction: row !important; gap: 8px !important; justify-content: center !important;
     }
 
-    /* 主單字按鈕 */
+    /* 主按鈕樣式 */
     div.stButton > button {
         width: auto !important; min-width: 45px !important;
         padding: 6px 14px !important; border-radius: 12px !important;
@@ -54,13 +54,13 @@ st.markdown("""
         border-bottom: 3.5px solid #e5e7eb !important;
     }
     
-    /* 系統操作按鈕 */
+    /* 系統操作按鈕標籤 */
     .control-row div.stButton > button {
         padding: 4px 10px !important; font-size: 13px !important;
         color: #777 !important; border-radius: 8px !important;
     }
 
-    /* 【關鍵修正】題數設定小按鈕尺寸限制 */
+    /* 設定區精緻加減按鈕 */
     .setting-area div.stButton > button {
         min-width: 35px !important; height: 35px !important;
         font-size: 14px !important; padding: 0px !important;
@@ -85,6 +85,10 @@ def load_data():
         df.columns = [str(c).strip() for c in df.columns]
         return df.dropna(subset=["日文原文", "中文意譯"]), {"ja": "日文原文", "cn": "中文意譯", "unit": "單元", "ch": "章節"}
     except: return None, None
+
+# 自然排序輔助函數
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', str(s))]
 
 def get_sentence_structure(text):
     pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
@@ -119,15 +123,18 @@ if 'ans' not in st.session_state: reset_state()
 df, cols = load_data()
 
 if df is not None:
-    # 練習設定區
     with st.expander("⚙️ 練習設定", expanded=False):
-        unit_list = sorted(df[cols['unit']].astype(str).unique())
+        # 單元排序
+        unit_list = sorted(df[cols['unit']].astype(str).unique(), key=natural_sort_key)
         sel_unit = st.selectbox("單元選擇", unit_list)
+        
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
-        sel_start_ch = st.selectbox("起始章節", sorted(unit_df[cols['ch']].astype(str).unique()))
+        
+        # 【關鍵修正】章節自然排序 (1, 2, 3...10)
+        ch_list = sorted(unit_df[cols['ch']].astype(str).unique(), key=natural_sort_key)
+        sel_start_ch = st.selectbox("起始章節", ch_list)
         
         st.write("題數調整：")
-        # 精緻化調整區
         st.markdown('<div class="setting-area">', unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 1, 1])
         if c1.button("➖"):
