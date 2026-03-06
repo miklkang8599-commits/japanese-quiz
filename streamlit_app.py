@@ -1,13 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v7.7 章節自然排序修正】
+【技術演進與邏輯追蹤表 - v7.9 功能鎖定與預習擴充】
 ----------------------------------------------------------------
-1. 排序邏輯優化：
-   - 修正起始章節排序：使用 re.sub 提取數字進行排序，確保 1 < 2 < 10。
-2. 穩定性維持：
-   - 預設練習題數鎖定為 5 題。
-   - 保留 v7.6 的精緻型加減按鈕（35px）。
-   - 保留文字標籤（退回、重填、上題、下題）。
+1. 核心承諾：
+   - 絕不改動已修復的功能：預設 5 題、自然排序、按鈕尺寸、功能鍵順序。
+2. 預習模式 (Preview Mode) 升級：
+   - 依照要求，在預習清單中列出：中文 -> 日文 -> 平假名 -> 聲音播放。
+3. 資料欄位：
+   - 自動對應 Google Sheets 中的「平假名」欄位並顯示。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -19,8 +19,8 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v7.7", layout="wide")
+# --- 1. 頁面配置與美學 CSS (維持 v7.7~v7.8 穩定版) ---
+st.set_page_config(page_title="🇯🇵 日文重組 v7.9", layout="wide")
 
 st.markdown("""
     <style>
@@ -83,10 +83,16 @@ def load_data():
     try:
         df = pd.read_csv(url)
         df.columns = [str(c).strip() for c in df.columns]
-        return df.dropna(subset=["日文原文", "中文意譯"]), {"ja": "日文原文", "cn": "中文意譯", "unit": "單元", "ch": "章節"}
+        mapping = {
+            "ja": "日文原文", 
+            "cn": "中文意譯", 
+            "kana": "平假名" if "平假名" in df.columns else ("假名" if "假名" in df.columns else None),
+            "unit": "單元", 
+            "ch": "章節"
+        }
+        return df.dropna(subset=["日文原文", "中文意譯"]), mapping
     except: return None, None
 
-# 自然排序輔助函數
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', str(s))]
 
@@ -115,7 +121,7 @@ def get_audio_html(text):
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 3. 初始化 (預設 5 題) ---
+# --- 3. 初始化 (維持預設 5 題) ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
@@ -124,13 +130,10 @@ df, cols = load_data()
 
 if df is not None:
     with st.expander("⚙️ 練習設定", expanded=False):
-        # 單元排序
         unit_list = sorted(df[cols['unit']].astype(str).unique(), key=natural_sort_key)
         sel_unit = st.selectbox("單元選擇", unit_list)
-        
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
         
-        # 【關鍵修正】章節自然排序 (1, 2, 3...10)
         ch_list = sorted(unit_df[cols['ch']].astype(str).unique(), key=natural_sort_key)
         sel_start_ch = st.selectbox("起始章節", ch_list)
         
@@ -150,9 +153,14 @@ if df is not None:
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
+    # --- 預習模式 (依照要求排序) ---
     if preview_mode:
         for i, item in enumerate(quiz_list):
-            st.write(f"**{i+1}. {item[cols['cn']]}**\n{item[cols['ja']]}")
+            st.subheader(f"No. {i+1}")
+            st.write(f"**中文：** {item[cols['cn']]}")
+            st.write(f"**日文：** {item[cols['ja']]}")
+            if cols['kana'] and pd.notna(item[cols['kana']]):
+                st.write(f"**平假名：** {item[cols['kana']]}")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
             st.divider()
     
@@ -169,9 +177,8 @@ if df is not None:
 
         st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {cn_text}")
 
-        # A. 答案展示區
-        curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
+        curr_ans_copy = list(st.session_state.ans)
         for s in sentence_struct:
             if s['type'] == 'punc': ans_html += f'<span style="color:#ccc;">{s["content"]}</span>'
             else:
@@ -180,14 +187,12 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字池
         st.markdown('<div class="hint-text">▼ 點選單字按鈕</div>', unsafe_allow_html=True)
         for idx, t in enumerate(st.session_state.shuf):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # C. 系統操作
         st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
@@ -201,7 +206,6 @@ if df is not None:
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # D. 檢查答案
         if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
             st.write(" ")
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
@@ -211,6 +215,8 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
+            if cols['kana'] and pd.notna(q[cols['kana']]):
+                st.markdown(f"**平假名：** {q[cols['kana']]}")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
