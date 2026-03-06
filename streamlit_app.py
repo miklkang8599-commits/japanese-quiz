@@ -1,15 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v8.3 資料封裝與按鈕優化】
+【技術演進與邏輯追蹤表 - v8.4 初始化崩潰修復】
 ----------------------------------------------------------------
-1. 核心修復 (平假名錯位)：
-   - 實施「資料封裝」：在題目初始化時(shuf生成時)，同步將該題所有欄位
-     (ja, cn, kana) 存入 session_state.curr_q_data。
-   - 顯示時直接讀取封裝好的資料，徹底切斷與原始 DataFrame 的索引聯繫。
-2. UI 優化：
-   - 將「繼續挑戰」按鈕明確標註為「👉 下一題 (Next)」。
-3. 穩定功能：
-   - 預設 5 題、章節自然排序、防誤觸加減按鈕、中文功能標籤。
+1. 錯誤修正 (AttributeError)：
+   - 修正 v8.3 因 session_state 屬性不存在導致的當機。
+   - 在程式入口處增加「保險絲」，確保 curr_q_data 永遠有預設值。
+2. 功能維持：
+   - 延續 v8.3 的「資料封裝」邏輯，徹底解決平假名錯位問題。
+   - 維持「預設 5 題」、「自然排序」、「中文標籤功能鍵」。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -21,9 +19,69 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v8.3", layout="wide")
+# --- 1. 頁面配置 ---
+st.set_page_config(page_title="🇯🇵 日文重組 v8.4", layout="wide")
 
+# --- 2. 核心函數定義 (必須在主程式執行前) ---
+def reset_state():
+    """重置所有答題狀態，但不重置設定"""
+    st.session_state.ans = []
+    st.session_state.used_history = []
+    st.session_state.shuf = []
+    st.session_state.is_correct = False
+    st.session_state.curr_q_data = None
+
+@st.cache_data(ttl=60)
+def load_data():
+    url = "https://docs.google.com/spreadsheets/d/12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA/export?format=csv&gid=1337973082"
+    try:
+        df = pd.read_csv(url)
+        df.columns = [str(c).strip() for c in df.columns]
+        mapping = {
+            "ja": "日文原文", "cn": "中文意譯", 
+            "kana": "平假名" if "平假名" in df.columns else ("假名" if "假名" in df.columns else None),
+            "unit": "單元", "ch": "章節"
+        }
+        return df.dropna(subset=["日文原文", "中文意譯"]), mapping
+    except: return None, None
+
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', str(s))]
+
+def get_sentence_structure(text):
+    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
+    raw = re.split(r'([、。！？])', text.strip())
+    struct = []
+    for p in raw:
+        if not p: continue
+        if p in ['、', '。', '！', '？']: struct.append({"type": "punc", "content": p})
+        else:
+            tokens = [t for t in re.split(r'[ 　]+', p) if t] if " " in p or "　" in p else [t for t in re.split(f"({'|'.join(pts)})", p) if t]
+            for t in tokens: struct.append({"type": "word", "content": t})
+    return struct
+
+def get_audio_html(text):
+    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
+    try:
+        res = requests.get(tts_url)
+        if res.status_code == 200:
+            b64 = base64.b64encode(res.content).decode()
+            return f'<audio controls style="width:100%; height:30px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+    except: pass
+    return ""
+
+# --- 3. 初始化 Session State (保險絲邏輯) ---
+# 這裡確保所有可能被讀取的屬性都已存在
+if 'num_q' not in st.session_state: st.session_state.num_q = 5
+if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
+if 'last_config' not in st.session_state: st.session_state.last_config = ""
+if 'ans' not in st.session_state: st.session_state.ans = []
+if 'used_history' not in st.session_state: st.session_state.used_history = []
+if 'shuf' not in st.session_state: st.session_state.shuf = []
+if 'is_correct' not in st.session_state: st.session_state.is_correct = False
+if 'curr_q_data' not in st.session_state: st.session_state.curr_q_data = None
+
+# --- 4. CSS 美化 ---
 st.markdown("""
     <style>
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
@@ -66,56 +124,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 核心函數 ---
-@st.cache_data(ttl=60)
-def load_data():
-    url = "https://docs.google.com/spreadsheets/d/12ZgvpxKtxSjobZLR7MTbEnqMOqGbjTiO9dXJFmayFYA/export?format=csv&gid=1337973082"
-    try:
-        df = pd.read_csv(url)
-        df.columns = [str(c).strip() for c in df.columns]
-        mapping = {
-            "ja": "日文原文", "cn": "中文意譯", 
-            "kana": "平假名" if "平假名" in df.columns else ("假名" if "假名" in df.columns else None),
-            "unit": "單元", "ch": "章節"
-        }
-        return df.dropna(subset=["日文原文", "中文意譯"]), mapping
-    except: return None, None
-
-def natural_sort_key(s):
-    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', str(s))]
-
-def get_sentence_structure(text):
-    pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
-    raw = re.split(r'([、。！？])', text.strip())
-    struct = []
-    for p in raw:
-        if not p: continue
-        if p in ['、', '。', '！', '？']: struct.append({"type": "punc", "content": p})
-        else:
-            tokens = [t for t in re.split(r'[ 　]+', p) if t] if " " in p or "　" in p else [t for t in re.split(f"({'|'.join(pts)})", p) if t]
-            for t in tokens: struct.append({"type": "word", "content": t})
-    return struct
-
-def get_audio_html(text):
-    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
-    try:
-        res = requests.get(tts_url)
-        if res.status_code == 200:
-            b64 = base64.b64encode(res.content).decode()
-            return f'<audio controls style="width:100%; height:30px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
-    except: pass
-    return ""
-
-def reset_state():
-    st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
-    st.session_state.curr_q_data = None
-
-# --- 3. 初始化 ---
-if 'num_q' not in st.session_state: st.session_state.num_q = 5
-if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
-if 'ans' not in st.session_state: reset_state()
-if 'last_config' not in st.session_state: st.session_state.last_config = ""
-
+# --- 5. 主程式 ---
 df, cols = load_data()
 
 if df is not None:
@@ -157,14 +166,13 @@ if df is not None:
             st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
-        # 【核心關鍵】題目資料封裝邏輯
+        # --- 題目封裝邏輯 (現在已具備屬性保險) ---
         if st.session_state.curr_q_data is None:
             q_raw = quiz_list[st.session_state.q_idx]
             ja_txt = str(q_raw[cols['ja']]).strip()
             struct = get_sentence_structure(ja_txt)
             tokens = [s['content'] for s in struct if s['type'] == 'word']
             
-            # 打包所有當前題目的必要資訊，存入 SessionState
             shuf_list = list(tokens)
             random.seed(st.session_state.q_idx)
             random.shuffle(shuf_list)
@@ -179,10 +187,9 @@ if df is not None:
             }
 
         q = st.session_state.curr_q_data
-
         st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {q['cn']}")
 
-        # A. 答案展示區 (使用封裝資料)
+        # A. 答案展示區
         ans_html = '<div class="res-box">'
         curr_ans_copy = list(st.session_state.ans)
         for s in q['struct']:
@@ -221,11 +228,9 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
-            # 【終極修復】直接讀取封裝好的 kana 欄位
             if q['kana'] and pd.notna(q['kana']):
                 st.markdown(f"**平假名：** {q['kana']}")
             st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
-            # 【UI 優化】明確標註下一題按鈕
             if st.button("👉 下一題 (Next)", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
