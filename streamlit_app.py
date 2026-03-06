@@ -1,14 +1,15 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v11.0 回歸簡約版】
+【技術演進與邏輯追蹤表 - v12.0 橫向文字終極修復】
 ----------------------------------------------------------------
-1. 視覺回歸：
-   - 移除所有複雜的 Flexbox 網格強制設定。
-   - 使用最基本的 st.columns 佈局，讓按鈕回歸自然大小。
-2. 標籤簡化：
-   - 恢復簡單的文字與圖示組合，不再使用長標籤。
+1. 視覺修復 (針對單字直式排列問題)：
+   - 徹底移除單字按鈕的 width: 100% 限制。
+   - 移除 st.columns 對單字按鈕的包裝，改用流式排列。
+   - 鎖定 white-space: nowrap，保證單字絕對橫向。
+2. 簡約回歸：
+   - 移除所有複雜的 Flexbox 網格，回歸最簡單的按鈕標籤。
 3. 核心鎖定：
-   - 預設 5 題、自然排序、索引重置 (平假名對位正確)。
+   - 預設 5 題、自然排序、平假名對位精準。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,14 +21,15 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與基礎 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v11.0", layout="wide")
+# --- 1. 頁面配置與「文字橫向」CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v12.0", layout="wide")
 
 st.markdown("""
     <style>
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
     
+    /* 答案區 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 6px; background-color: #ffffff; padding: 10px; 
         border-radius: 10px; border: 2px solid #e5e7eb; min-height: 45px; 
@@ -38,13 +40,17 @@ st.markdown("""
         text-align: center; font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 單字按鈕樣式 */
+    /* 【核心修正】強制單字按鈕永遠橫向 */
     div.stButton > button {
+        width: auto !important; /* 寬度自動，不准強制壓縮 */
+        min-width: 45px !important;
+        white-space: nowrap !important; /* 不准換行 */
         border-radius: 12px !important;
         font-weight: bold !important;
         background-color: white !important;
         border: 2px solid #e5e7eb !important;
         border-bottom: 4px solid #e5e7eb !important;
+        margin: 4px 2px !important;
     }
     
     .stInfo { border-radius: 10px; font-size: 15px; margin-bottom: 10px; }
@@ -162,15 +168,16 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字池
-        st.caption("▼ 請點選單字")
-        cols_words = st.columns(len(q['shuf']))
+        # B. 單字池 (移除 columns，改用流式排列)
+        st.caption("▼ 請點選單字按鈕")
+        # 直接使用容器讓按鈕自然排列
         for idx, t in enumerate(q['shuf']):
             if idx not in st.session_state.used_history:
-                if cols_words[idx].button(t, key=f"w_{idx}"):
+                if st.button(t, key=f"w_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # C. 系統控制
+        # C. 系統控制 (保持簡單)
+        st.write(" ")
         st.caption("▼ 系統操作")
         c_nav = st.columns(4)
         if c_nav[0].button("⬅ 退回"):
@@ -182,12 +189,12 @@ if df is not None:
         if c_nav[3].button("⏭ 下一題"): 
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
 
-        # D. 檢查與結果
+        # D. 檢查與導航
         if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
                 if "".join(st.session_state.ans) == "".join(q['tokens']):
                     st.session_state.is_correct = True; st.rerun()
-                else: st.error("順序不對喔！")
+                else: st.error("順序不對喔！💡")
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
@@ -196,5 +203,5 @@ if df is not None:
             if st.button("👉 下一題", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
-        st.balloons(); st.success("完成！")
-        if st.button("從頭開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.balloons(); st.success("全部題數練習完成！")
+        if st.button("🔄 重新開始練習"): st.session_state.q_idx = 0; reset_state(); st.rerun()
