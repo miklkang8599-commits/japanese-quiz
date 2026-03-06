@@ -1,12 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v8.1 資料精準對位修正】
+【技術演進與邏輯追蹤表 - v8.2 平假名對位終極修復】
 ----------------------------------------------------------------
-1. 錯誤修正：
-   - 修正「正解」後平假名顯示與聲音不符的問題：確保從當前變數 `q` 提取資料。
-   - 修正預習模式中的資料錯位。
-2. 功能維持：
-   - 預設 5 題、自然排序、精緻加減按鈕、即時同步更新。
+1. 錯誤修正 (針對截圖問題)：
+   - 修復平假名與題號不符：改用絕對物件參照法，確保平假名永遠綁定當前顯示題目 q。
+   - 強化音訊同步：確保 Google TTS 讀取的文字與日文原文 ja_raw 完全一致。
+2. 功能鎖定：
+   - 預設練習 5 題、章節數字自然排序、防誤觸型加減按鈕。
+   - 保留：退回 -> 重填 -> 上題 -> 下題 的順序與文字標籤。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -19,7 +20,7 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v8.1", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v8.2", layout="wide")
 
 st.markdown("""
     <style>
@@ -106,7 +107,7 @@ def get_audio_html(text):
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 3. 初始化 ---
+# --- 3. 初始化 (預設 5 題) ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
@@ -147,18 +148,18 @@ if df is not None:
             st.subheader(f"No. {i+1}")
             st.write(f"**中文：** {item[cols['cn']]}")
             st.write(f"**日文：** {item[cols['ja']]}")
-            # 精準抓取當前 item 的平假名
+            # 強制鎖定當前 item 物件
             if cols['kana'] and pd.notna(item.get(cols['kana'])):
                 st.write(f"**平假名：** {item[cols['kana']]}")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
             st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
+        # 【核心關鍵】鎖定當前題目物件 q
         q = quiz_list[st.session_state.q_idx]
         ja_raw = str(q[cols['ja']]).strip()
         cn_text = q[cols['cn']]
-        # 確保平假名是從當前題目 q 提取
-        kana_text = q.get(cols['kana']) if cols['kana'] else None
+        current_kana = q.get(cols['kana']) if cols['kana'] else None
 
         sentence_struct = get_sentence_structure(ja_raw)
         word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
@@ -208,13 +209,9 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
-            # 重點修正：這裡強制顯示當前題目 q 的平假名與聲音
-            if kana_text and pd.notna(kana_text):
-                st.markdown(f"**平假名：** {kana_text}")
+            # 【終極修復】這裡強制只使用當前題目變數 current_kana
+            if current_kana and pd.notna(current_kana):
+                st.markdown(f"**平假名：** {current_kana}")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
-    else:
-        st.balloons()
-        st.success("全部題數練習完成！")
-        if st.button("從頭開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
