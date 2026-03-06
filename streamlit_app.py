@@ -1,13 +1,15 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v8.2 平假名對位終極修復】
+【技術演進與邏輯追蹤表 - v8.3 資料封裝與按鈕優化】
 ----------------------------------------------------------------
-1. 錯誤修正 (針對截圖問題)：
-   - 修復平假名與題號不符：改用絕對物件參照法，確保平假名永遠綁定當前顯示題目 q。
-   - 強化音訊同步：確保 Google TTS 讀取的文字與日文原文 ja_raw 完全一致。
-2. 功能鎖定：
-   - 預設練習 5 題、章節數字自然排序、防誤觸型加減按鈕。
-   - 保留：退回 -> 重填 -> 上題 -> 下題 的順序與文字標籤。
+1. 核心修復 (平假名錯位)：
+   - 實施「資料封裝」：在題目初始化時(shuf生成時)，同步將該題所有欄位
+     (ja, cn, kana) 存入 session_state.curr_q_data。
+   - 顯示時直接讀取封裝好的資料，徹底切斷與原始 DataFrame 的索引聯繫。
+2. UI 優化：
+   - 將「繼續挑戰」按鈕明確標註為「👉 下一題 (Next)」。
+3. 穩定功能：
+   - 預設 5 題、章節自然排序、防誤觸加減按鈕、中文功能標籤。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,7 +22,7 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v8.2", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v8.3", layout="wide")
 
 st.markdown("""
     <style>
@@ -106,8 +108,9 @@ def get_audio_html(text):
 
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
+    st.session_state.curr_q_data = None
 
-# --- 3. 初始化 (預設 5 題) ---
+# --- 3. 初始化 ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
@@ -148,32 +151,41 @@ if df is not None:
             st.subheader(f"No. {i+1}")
             st.write(f"**中文：** {item[cols['cn']]}")
             st.write(f"**日文：** {item[cols['ja']]}")
-            # 強制鎖定當前 item 物件
             if cols['kana'] and pd.notna(item.get(cols['kana'])):
                 st.write(f"**平假名：** {item[cols['kana']]}")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
             st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
-        # 【核心關鍵】鎖定當前題目物件 q
-        q = quiz_list[st.session_state.q_idx]
-        ja_raw = str(q[cols['ja']]).strip()
-        cn_text = q[cols['cn']]
-        current_kana = q.get(cols['kana']) if cols['kana'] else None
-
-        sentence_struct = get_sentence_structure(ja_raw)
-        word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
-        
-        if not st.session_state.shuf:
-            st.session_state.shuf = list(word_tokens)
+        # 【核心關鍵】題目資料封裝邏輯
+        if st.session_state.curr_q_data is None:
+            q_raw = quiz_list[st.session_state.q_idx]
+            ja_txt = str(q_raw[cols['ja']]).strip()
+            struct = get_sentence_structure(ja_txt)
+            tokens = [s['content'] for s in struct if s['type'] == 'word']
+            
+            # 打包所有當前題目的必要資訊，存入 SessionState
+            shuf_list = list(tokens)
             random.seed(st.session_state.q_idx)
-            random.shuffle(st.session_state.shuf)
+            random.shuffle(shuf_list)
+            
+            st.session_state.curr_q_data = {
+                "ja": ja_txt,
+                "cn": q_raw[cols['cn']],
+                "kana": q_raw.get(cols['kana']) if cols['kana'] else None,
+                "struct": struct,
+                "tokens": tokens,
+                "shuf": shuf_list
+            }
 
-        st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {cn_text}")
+        q = st.session_state.curr_q_data
 
+        st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {q['cn']}")
+
+        # A. 答案展示區 (使用封裝資料)
         ans_html = '<div class="res-box">'
         curr_ans_copy = list(st.session_state.ans)
-        for s in sentence_struct:
+        for s in q['struct']:
             if s['type'] == 'punc': ans_html += f'<span style="color:#ccc;">{s["content"]}</span>'
             else:
                 val = curr_ans_copy.pop(0) if curr_ans_copy else ""
@@ -182,7 +194,7 @@ if df is not None:
         st.markdown(ans_html, unsafe_allow_html=True)
 
         st.markdown('<div class="hint-text">▼ 點選單字按鈕</div>', unsafe_allow_html=True)
-        for idx, t in enumerate(st.session_state.shuf):
+        for idx, t in enumerate(q['shuf']):
             if idx not in st.session_state.used_history:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
@@ -200,18 +212,23 @@ if df is not None:
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        if len(st.session_state.ans) == len(word_tokens) and not st.session_state.is_correct:
+        if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
             st.write(" ")
             if st.button("🔍 檢查答案", type="primary", use_container_width=True):
-                if "".join(st.session_state.ans) == "".join(word_tokens):
+                if "".join(st.session_state.ans) == "".join(q['tokens']):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("順序不對喔！💡")
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
-            # 【終極修復】這裡強制只使用當前題目變數 current_kana
-            if current_kana and pd.notna(current_kana):
-                st.markdown(f"**平假名：** {current_kana}")
-            st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
-            if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
+            # 【終極修復】直接讀取封裝好的 kana 欄位
+            if q['kana'] and pd.notna(q['kana']):
+                st.markdown(f"**平假名：** {q['kana']}")
+            st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
+            # 【UI 優化】明確標註下一題按鈕
+            if st.button("👉 下一題 (Next)", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
+    else:
+        st.balloons()
+        st.success("全部題數練習完成！")
+        if st.button("從頭開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
