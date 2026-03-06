@@ -1,13 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v7.9 功能鎖定與預習擴充】
+【技術演進與邏輯追蹤表 - v8.0 設定同步重置邏輯】
 ----------------------------------------------------------------
-1. 核心承諾：
-   - 絕不改動已修復的功能：預設 5 題、自然排序、按鈕尺寸、功能鍵順序。
-2. 預習模式 (Preview Mode) 升級：
-   - 依照要求，在預習清單中列出：中文 -> 日文 -> 平假名 -> 聲音播放。
-3. 資料欄位：
-   - 自動對應 Google Sheets 中的「平假名」欄位並顯示。
+1. 邏輯修正：
+   - 新增監測：當單元 (sel_unit)、章節 (sel_start_ch) 或題數 (num_q) 改變時，
+     自動觸發 reset_state() 並將 q_idx 設為 0。
+   - 確保「題目範圍」與「設定介面」百分之百即時同步。
+2. 核心功能鎖定：
+   - 預設 5 題、自然排序、精緻加減按鈕、中文標籤功能鍵、預習模式平假名。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -19,15 +19,13 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與美學 CSS (維持 v7.7~v7.8 穩定版) ---
-st.set_page_config(page_title="🇯🇵 日文重組 v7.9", layout="wide")
+# --- 1. 頁面配置與美學 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v8.0", layout="wide")
 
 st.markdown("""
     <style>
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
-
-    /* 答案區 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; background-color: #ffffff; padding: 10px; 
         border-radius: 10px; border: 1.5px solid #e5e7eb; min-height: 42px; 
@@ -38,14 +36,10 @@ st.markdown("""
         display: flex; align-items: center; justify-content: center; 
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
-
-    /* 單字池置中 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
         flex-direction: row !important; gap: 8px !important; justify-content: center !important;
     }
-
-    /* 主按鈕樣式 */
     div.stButton > button {
         width: auto !important; min-width: 45px !important;
         padding: 6px 14px !important; border-radius: 12px !important;
@@ -53,24 +47,18 @@ st.markdown("""
         background-color: white !important; border: 2px solid #e5e7eb !important;
         border-bottom: 3.5px solid #e5e7eb !important;
     }
-    
-    /* 系統操作按鈕標籤 */
     .control-row div.stButton > button {
         padding: 4px 10px !important; font-size: 13px !important;
         color: #777 !important; border-radius: 8px !important;
     }
-
-    /* 設定區精緻加減按鈕 */
     .setting-area div.stButton > button {
         min-width: 35px !important; height: 35px !important;
         font-size: 14px !important; padding: 0px !important;
     }
-
     .num-display { 
         text-align: center; font-size: 18px; font-weight: bold; 
         color: #1cb0f6; line-height: 35px;
     }
-
     .hint-text { font-size: 12px; color: #ccc; text-align: center; margin-bottom: 2px; }
     .stInfo { padding: 8px !important; border-radius: 10px; font-size: 14px; margin-bottom: 10px; }
     </style>
@@ -84,11 +72,9 @@ def load_data():
         df = pd.read_csv(url)
         df.columns = [str(c).strip() for c in df.columns]
         mapping = {
-            "ja": "日文原文", 
-            "cn": "中文意譯", 
+            "ja": "日文原文", "cn": "中文意譯", 
             "kana": "平假名" if "平假名" in df.columns else ("假名" if "假名" in df.columns else None),
-            "unit": "單元", 
-            "ch": "章節"
+            "unit": "單元", "ch": "章節"
         }
         return df.dropna(subset=["日文原文", "中文意譯"]), mapping
     except: return None, None
@@ -121,10 +107,13 @@ def get_audio_html(text):
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
 
-# --- 3. 初始化 (維持預設 5 題) ---
+# --- 3. 初始化 ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
+
+# 用於追蹤設定是否改變的暫存變數
+if 'last_config' not in st.session_state: st.session_state.last_config = ""
 
 df, cols = load_data()
 
@@ -140,20 +129,24 @@ if df is not None:
         st.write("題數調整：")
         st.markdown('<div class="setting-area">', unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 1, 1])
-        if c1.button("➖"):
-            st.session_state.num_q = max(1, st.session_state.num_q - 1)
-        with c2:
-            st.markdown(f'<div class="num-display">{st.session_state.num_q}</div>', unsafe_allow_html=True)
-        if c3.button("➕"):
-            st.session_state.num_q = min(50, st.session_state.num_q + 1)
+        if c1.button("➖"): st.session_state.num_q = max(1, st.session_state.num_q - 1)
+        with c2: st.markdown(f'<div class="num-display">{st.session_state.num_q}</div>', unsafe_allow_html=True)
+        if c3.button("➕"): st.session_state.num_q = min(50, st.session_state.num_q + 1)
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # 【即時同步邏輯】檢測設定是否變動
+        current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
+        if st.session_state.last_config != current_config:
+            st.session_state.last_config = current_config
+            st.session_state.q_idx = 0
+            reset_state()
+            st.rerun()
+
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch]
         preview_mode = st.checkbox("預習模式")
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # --- 預習模式 (依照要求排序) ---
     if preview_mode:
         for i, item in enumerate(quiz_list):
             st.subheader(f"No. {i+1}")
@@ -220,3 +213,7 @@ if df is not None:
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
+    else:
+        st.balloons()
+        st.success("完成練習！")
+        if st.button("重新開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
