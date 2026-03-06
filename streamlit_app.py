@@ -1,13 +1,12 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v8.0 設定同步重置邏輯】
+【技術演進與邏輯追蹤表 - v8.1 資料精準對位修正】
 ----------------------------------------------------------------
-1. 邏輯修正：
-   - 新增監測：當單元 (sel_unit)、章節 (sel_start_ch) 或題數 (num_q) 改變時，
-     自動觸發 reset_state() 並將 q_idx 設為 0。
-   - 確保「題目範圍」與「設定介面」百分之百即時同步。
-2. 核心功能鎖定：
-   - 預設 5 題、自然排序、精緻加減按鈕、中文標籤功能鍵、預習模式平假名。
+1. 錯誤修正：
+   - 修正「正解」後平假名顯示與聲音不符的問題：確保從當前變數 `q` 提取資料。
+   - 修正預習模式中的資料錯位。
+2. 功能維持：
+   - 預設 5 題、自然排序、精緻加減按鈕、即時同步更新。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,7 +19,7 @@ import requests
 import base64
 
 # --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v8.0", layout="wide")
+st.set_page_config(page_title="🇯🇵 日文重組 v8.1", layout="wide")
 
 st.markdown("""
     <style>
@@ -111,8 +110,6 @@ def reset_state():
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
-
-# 用於追蹤設定是否改變的暫存變數
 if 'last_config' not in st.session_state: st.session_state.last_config = ""
 
 df, cols = load_data()
@@ -122,7 +119,6 @@ if df is not None:
         unit_list = sorted(df[cols['unit']].astype(str).unique(), key=natural_sort_key)
         sel_unit = st.selectbox("單元選擇", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
-        
         ch_list = sorted(unit_df[cols['ch']].astype(str).unique(), key=natural_sort_key)
         sel_start_ch = st.selectbox("起始章節", ch_list)
         
@@ -134,7 +130,6 @@ if df is not None:
         if c3.button("➕"): st.session_state.num_q = min(50, st.session_state.num_q + 1)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # 【即時同步邏輯】檢測設定是否變動
         current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
         if st.session_state.last_config != current_config:
             st.session_state.last_config = current_config
@@ -152,14 +147,19 @@ if df is not None:
             st.subheader(f"No. {i+1}")
             st.write(f"**中文：** {item[cols['cn']]}")
             st.write(f"**日文：** {item[cols['ja']]}")
-            if cols['kana'] and pd.notna(item[cols['kana']]):
+            # 精準抓取當前 item 的平假名
+            if cols['kana'] and pd.notna(item.get(cols['kana'])):
                 st.write(f"**平假名：** {item[cols['kana']]}")
             st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True)
             st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
         q = quiz_list[st.session_state.q_idx]
-        ja_raw, cn_text = str(q[cols['ja']]).strip(), q[cols['cn']]
+        ja_raw = str(q[cols['ja']]).strip()
+        cn_text = q[cols['cn']]
+        # 確保平假名是從當前題目 q 提取
+        kana_text = q.get(cols['kana']) if cols['kana'] else None
+
         sentence_struct = get_sentence_structure(ja_raw)
         word_tokens = [s['content'] for s in sentence_struct if s['type'] == 'word']
         
@@ -208,12 +208,13 @@ if df is not None:
 
         if st.session_state.is_correct:
             st.success("正解！🎉")
-            if cols['kana'] and pd.notna(q[cols['kana']]):
-                st.markdown(f"**平假名：** {q[cols['kana']]}")
+            # 重點修正：這裡強制顯示當前題目 q 的平假名與聲音
+            if kana_text and pd.notna(kana_text):
+                st.markdown(f"**平假名：** {kana_text}")
             st.markdown(get_audio_html(ja_raw), unsafe_allow_html=True)
             if st.button("繼續挑戰下一題 ➡️", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
         st.balloons()
-        st.success("完成練習！")
-        if st.button("重新開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.success("全部題數練習完成！")
+        if st.button("從頭開始"): st.session_state.q_idx = 0; reset_state(); st.rerun()
