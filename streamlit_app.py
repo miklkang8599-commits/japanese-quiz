@@ -1,18 +1,3 @@
-"""
-================================================================
-【技術演進與邏輯追蹤表 - v9.0 介面邏輯徹底修復】
-----------------------------------------------------------------
-1. 修正重複按鈕：
-   - 移除 v8.9 中因代碼冗餘導致的「退回一格」重複顯示問題。
-2. 修正按鈕文字消失：
-   - 強化 CSS：為主操作按鈕設定足夠的 min-width 並取消 text-overflow。
-   - 確保標籤「🔍 檢查答案」與「👉 進入下一題練習」清晰可見。
-3. 核心鎖定：
-   - 預設 5 題、自然排序、平假名精準對位。
-----------------------------------------------------------------
-================================================================
-"""
-
 import streamlit as st
 import pandas as pd
 import random
@@ -20,15 +5,14 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與進階 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v9.0", layout="wide")
+# --- 1. 頁面配置與「文字不消失」CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v9.1", layout="wide")
 
 st.markdown("""
     <style>
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 答案展示區 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; background-color: #ffffff; padding: 10px; 
         border-radius: 10px; border: 1.5px solid #e5e7eb; min-height: 42px; 
@@ -40,38 +24,39 @@ st.markdown("""
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 按鈕基礎樣式：強制顯示文字 */
+    /* 確保單字按鈕池可以換行且不縮小 */
+    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
+        display: flex !important; flex-wrap: wrap !important;
+        flex-direction: row !important; gap: 6px !important; justify-content: center !important;
+    }
+
+    /* 所有按鈕的基礎：強制顯示文字 */
     div.stButton > button {
         border-radius: 12px !important;
         font-weight: bold !important;
-        white-space: nowrap !important;
+        white-space: nowrap !important; /* 核心：文字不准換行或消失 */
         background-color: white !important;
         border: 2px solid #e5e7eb !important;
         border-bottom: 4px solid #e5e7eb !important;
         transition: all 0.1s;
     }
 
-    /* 單字按鈕池 (併排顯示) */
-    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
-        display: flex !important; flex-wrap: wrap !important;
-        flex-direction: row !important; gap: 6px !important; justify-content: center !important;
-    }
-
-    /* 底部系統控制區按鈕：等寬等高 */
-    .control-row [data-testid="column"] { flex: 1 1 0% !important; }
+    /* 系統操作按鈕區 (退回/重填/上一題/下一題) */
+    .control-row [data-testid="column"] { flex: 1 1 0% !important; min-width: 80px !important; }
     .control-row button {
-        width: 100% !important; min-height: 48px !important;
-        padding: 4px 2px !important; font-size: 12px !important;
+        width: 100% !important; min-height: 50px !important;
+        font-size: 12px !important;
         color: #555 !important;
     }
 
-    /* 主操作按鈕 (檢查/下一題)：寬大且文字清晰 */
-    .main-action-btn button {
+    /* 【關鍵修復】主操作按鈕：檢查答案 / 進入下一題 */
+    .stButton.main-btn button {
         width: 100% !important;
-        min-height: 50px !important;
-        font-size: 16px !important;
-        color: #ffffff !important;
-        border: none !important;
+        min-height: 55px !important;
+        font-size: 18px !important; /* 加大字體 */
+        background-color: #ffffff !important;
+        color: #4b4b4b !important;
+        display: block !important;
     }
 
     .num-display { text-align: center; font-size: 18px; font-weight: bold; color: #1cb0f6; line-height: 35px; }
@@ -80,7 +65,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 核心函數 ---
+# --- 2. 核心邏輯函數 ---
 def reset_state():
     st.session_state.ans, st.session_state.used_history, st.session_state.shuf, st.session_state.is_correct = [], [], [], False
     st.session_state.curr_q_data = None
@@ -124,7 +109,7 @@ def get_audio_html(text):
     except: pass
     return ""
 
-# --- 3. 初始化 (預設 5 題) ---
+# --- 3. 初始化 ---
 if 'num_q' not in st.session_state: st.session_state.num_q = 5
 if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
 if 'ans' not in st.session_state: reset_state()
@@ -200,25 +185,25 @@ if df is not None:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # B. 系統控制區 (修復重複按鈕與順序)
+        # B. 系統控制區 (修復重複按鈕)
         st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
-        if nav_cols[0].button("⬅ 退回一格", key="ctrl_back"):
+        if nav_cols[0].button("⬅ 退回一格", key="n_back"):
             if st.session_state.used_history:
                 st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
-        if nav_cols[1].button("🔄 全部重填", key="ctrl_reset"): reset_state(); st.rerun()
-        if nav_cols[2].button("⏮ 上一題", key="ctrl_prev"): 
+        if nav_cols[1].button("🔄 全部重填", key="n_reset"): reset_state(); st.rerun()
+        if nav_cols[2].button("⏮ 上一題", key="n_prev"): 
             st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
-        if nav_cols[3].button("⏭ 下一題", key="ctrl_next"): 
+        if nav_cols[3].button("⏭ 下一題", key="n_next"): 
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # C. 檢查與導航 (主操作區 - 強化文字顯示)
+        # C. 檢查與導航 (使用特殊 CSS 類別強制顯示文字)
         st.write(" ")
         if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
-            st.markdown('<div class="main-action-btn">', unsafe_allow_html=True)
-            if st.button("🔍 檢查答案", type="primary", use_container_width=True, key="main_check"):
+            st.markdown('<div class="main-btn">', unsafe_allow_html=True)
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True, key="btn_chk"):
                 if "".join(st.session_state.ans) == "".join(q['tokens']):
                     st.session_state.is_correct = True; st.rerun()
                 else: st.error("順序不對喔！💡")
@@ -229,8 +214,8 @@ if df is not None:
             if q['kana'] and pd.notna(q['kana']):
                 st.markdown(f"**平假名：** {q['kana']}")
             st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
-            st.markdown('<div class="main-action-btn">', unsafe_allow_html=True)
-            if st.button("👉 進入下一題練習", type="primary", use_container_width=True, key="main_next"): 
+            st.markdown('<div class="main-btn">', unsafe_allow_html=True)
+            if st.button("👉 進入下一題練習", type="primary", use_container_width=True, key="btn_next"): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     else:
