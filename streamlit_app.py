@@ -1,13 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v8.6 按鈕文字標籤全稱化】
+【技術演進與邏輯追蹤表 - v8.7 按鈕文字與邏輯修復】
 ----------------------------------------------------------------
-1. 按鈕語意優化：
-   - 依照要求將「上題/下題」改為「上一題/下一題」。
-   - 強化「檢查答案」與「進入下一題」的動作導引文字。
-2. 核心穩定性 (延續 v8.5)：
-   - 強制執行 .reset_index(drop=True) 確保平假名與題目 100% 對位。
-   - 預設練習 5 題、章節數字自然排序、防誤觸型加減按鈕。
+1. 標籤與邏輯同步：
+   - 確保「🔍 檢查答案」與「👉 進入下一題練習」文字 100% 顯示。
+   - 修正按鈕 Key 值，避免 Streamlit 因元件變動導致點擊失效。
+2. 空間管理：
+   - 壓縮系統控制區高度，確保「檢查答案」結果在 iPhone 上不需捲動即可看見。
+3. 核心功能維持：
+   - 預設 5 題、自然排序、平假名精準對位 (v8.5 索引修正)。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -19,15 +20,14 @@ import re
 import requests
 import base64
 
-# --- 1. 頁面配置與美學 CSS ---
-st.set_page_config(page_title="🇯🇵 日文重組 v8.6", layout="wide")
+# --- 1. 頁面配置與 CSS ---
+st.set_page_config(page_title="🇯🇵 日文重組 v8.7", layout="wide")
 
 st.markdown("""
     <style>
     .block-container { padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }
     [data-testid="stHeader"] { display: none; }
     
-    /* 答案區 */
     .res-box { 
         display: flex; flex-wrap: wrap; gap: 4px; background-color: #ffffff; padding: 10px; 
         border-radius: 10px; border: 1.5px solid #e5e7eb; min-height: 42px; 
@@ -39,13 +39,11 @@ st.markdown("""
         font-size: 15px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }
 
-    /* 單字池與功能按鈕置中 */
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
         display: flex !important; flex-wrap: wrap !important;
         flex-direction: row !important; gap: 6px !important; justify-content: center !important;
     }
 
-    /* 按鈕樣式 */
     div.stButton > button {
         width: auto !important; min-width: 45px !important;
         padding: 6px 12px !important; border-radius: 12px !important;
@@ -60,13 +58,9 @@ st.markdown("""
         color: #777 !important; border-radius: 8px !important;
     }
 
-    .setting-area div.stButton > button {
-        min-width: 35px !important; height: 35px !important; font-size: 14px !important;
-    }
-
     .num-display { text-align: center; font-size: 18px; font-weight: bold; color: #1cb0f6; line-height: 35px; }
-    .hint-text { font-size: 12px; color: #ccc; text-align: center; margin-bottom: 2px; }
-    .stInfo { padding: 8px !important; border-radius: 10px; font-size: 14px; margin-bottom: 10px; }
+    .hint-text { font-size: 11px; color: #ccc; text-align: center; margin-bottom: 2px; }
+    .stInfo { padding: 8px !important; border-radius: 10px; font-size: 14px; margin-bottom: 8px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -132,12 +126,10 @@ if df is not None:
         sel_start_ch = st.selectbox("起始章節", ch_list)
         
         st.write("題數調整：")
-        st.markdown('<div class="setting-area">', unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 1, 1])
         if c1.button("➖"): st.session_state.num_q = max(1, st.session_state.num_q - 1)
         with c2: st.markdown(f'<div class="num-display">{st.session_state.num_q}</div>', unsafe_allow_html=True)
         if c3.button("➕"): st.session_state.num_q = min(50, st.session_state.num_q + 1)
-        st.markdown('</div>', unsafe_allow_html=True)
         
         current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
         if st.session_state.last_config != current_config:
@@ -146,7 +138,6 @@ if df is not None:
             reset_state()
             st.rerun()
 
-        # 【核心修正】重置索引確保平假名不跑位
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch].reset_index(drop=True)
         preview_mode = st.checkbox("預習模式")
 
@@ -180,7 +171,6 @@ if df is not None:
         q = st.session_state.curr_q_data
         st.info(f"Q{st.session_state.q_idx + 1}/{len(quiz_list)} | {q['cn']}")
 
-        # A. 答案展示區
         ans_html = '<div class="res-box">'
         curr_ans_copy = list(st.session_state.ans)
         for s in q['struct']:
@@ -197,7 +187,7 @@ if df is not None:
                 if st.button(t, key=f"p_{st.session_state.q_idx}_{idx}"):
                     st.session_state.ans.append(t); st.session_state.used_history.append(idx); st.rerun()
 
-        # B. 系統控制 (標籤全稱化)
+        # 系統控制
         st.markdown('<div class="hint-text">▼ 系統控制</div>', unsafe_allow_html=True)
         st.markdown('<div class="control-row">', unsafe_allow_html=True)
         nav_cols = st.columns(4)
@@ -211,12 +201,14 @@ if df is not None:
             st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # C. 檢查與導航
+        # 【修復重點】檢查與導航邏輯
+        st.write(" ")
         if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
-            st.write(" ")
-            if st.button("🔍 檢查答案是否正確", type="primary", use_container_width=True):
+            # 修改按鈕文字與 Key
+            if st.button("🔍 檢查答案", type="primary", use_container_width=True, key="check_btn"):
                 if "".join(st.session_state.ans) == "".join(q['tokens']):
-                    st.session_state.is_correct = True; st.rerun()
+                    st.session_state.is_correct = True
+                    st.rerun()
                 else: st.error("順序不對喔！💡")
 
         if st.session_state.is_correct:
@@ -224,8 +216,11 @@ if df is not None:
             if q['kana'] and pd.notna(q['kana']):
                 st.markdown(f"**平假名：** {q['kana']}")
             st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
-            if st.button("👉 進入下一題練習", type="primary", use_container_width=True): 
-                st.session_state.q_idx += 1; reset_state(); st.rerun()
+            # 修改按鈕文字與 Key
+            if st.button("👉 進入下一題練習", type="primary", use_container_width=True, key="next_btn"): 
+                st.session_state.q_idx += 1
+                reset_state()
+                st.rerun()
     else:
         st.balloons()
         st.success("全部題數練習完成！")
