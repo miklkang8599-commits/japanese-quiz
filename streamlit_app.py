@@ -1,13 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v12.2 語音與讀音同步修正】
+【技術演進與邏輯追蹤表 - v12.2.1 章節範圍透明化】
 ----------------------------------------------------------------
-1. 核心修復 (語音不符問題)：
-   - 修改發音邏輯：若存在「平假名」欄位，TTS 將優先讀取平假名而非原文。
-   - 這能解決漢字讀音歧義(如「見当た」)造成的音檔與讀音不符。
-2. 穩定功能：
-   - 預設練習 5 題、章節自然排序、流式按鈕佈局(確保橫向)。
-   - 版本號顯性標注於頂部。
+1. 視覺修正：
+   - 確保章節選單顯示原始編號。
+   - 在設定區新增提示資訊，明確顯示練習起點與題數。
+2. 核心邏輯 (承襲 v12.2)：
+   - 平假名優先發音 (解决音檔不符問題)。
+   - 橫向流式單字按鈕、自然排序邏輯。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,7 +20,7 @@ import requests
 import base64
 
 # --- 定義版本編號 ---
-VERSION = "v12.2.20260307"
+VERSION = "v12.2.20260307.FIX"
 
 # --- 1. 頁面配置與 CSS ---
 st.set_page_config(page_title=f"🇯🇵 日文重組 {VERSION}", layout="wide")
@@ -40,7 +40,6 @@ st.markdown(f"""
         text-align: center; font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }}
 
-    /* 強制單字按鈕橫向 */
     div.stButton > button {{
         width: auto !important;
         min-width: 45px !important;
@@ -53,8 +52,8 @@ st.markdown(f"""
         margin: 4px 2px !important;
     }}
     
-    .stInfo {{ border-radius: 10px; font-size: 15px; margin-bottom: 5px; }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: 10px; }}
+    .range-info {{ font-size: 12px; color: #666; background: #f0f7ff; padding: 5px 10px; border-radius: 5px; margin-bottom: 10px; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -92,9 +91,8 @@ def get_sentence_structure(text):
             for t in tokens: struct.append({"type": "word", "content": t})
     return struct
 
-# 【核心更新】音檔播放優先讀取平假名
 def get_audio_html(text, kana=None):
-    # 如果有平假名讀音，優先讓 TTS 讀取平假名以確保發音精準
+    # 延續 v12.2 的核心修復：優先讀取平假名確保發音精準
     audio_input = kana if kana and pd.notna(kana) else text
     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={audio_input}"
     try:
@@ -120,33 +118,41 @@ st.markdown(f'<div class="version-tag">Version: {VERSION}</div>', unsafe_allow_h
 df, cols = load_data()
 
 if df is not None:
-    with st.expander("⚙️ 練習設定", expanded=False):
+    with st.expander("⚙️ 練習範圍設定", expanded=False):
+        # 1. 選擇單元
         unit_list = sorted(df[cols['unit']].astype(str).unique(), key=natural_sort_key)
-        sel_unit = st.selectbox("選擇單元", unit_list)
+        sel_unit = st.selectbox("1. 選擇單元", unit_list)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
+        
+        # 2. 選擇起始章節 (確保顯示原始編號)
         ch_list = sorted(unit_df[cols['ch']].astype(str).unique(), key=natural_sort_key)
-        sel_start_ch = st.selectbox("起始章節", ch_list)
+        sel_start_ch = st.selectbox("2. 起始章節編號", ch_list)
         
-        st.session_state.num_q = st.number_input("練習題數", min_value=1, value=st.session_state.num_q)
+        # 3. 設定題數
+        st.session_state.num_q = st.number_input("3. 練習總題數", min_value=1, value=st.session_state.num_q)
         
+        # 偵測設定變更
         current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
         if st.session_state.last_config != current_config:
             st.session_state.last_config = current_config
             st.session_state.q_idx = 0
             reset_state(); st.rerun()
 
+        # 根據起始章節進行過濾
         filtered_df = unit_df[unit_df[cols['ch']].astype(str) >= sel_start_ch].reset_index(drop=True)
-        preview_mode = st.checkbox("預習模式")
+        preview_mode = st.checkbox("開啟預習模式")
+        
+        # 顯示目前練習範圍摘要
+        st.markdown(f'<div class="range-info">📍 目前練習：{sel_unit} / 從第 {sel_start_ch} 章開始，共挑選 {min(len(filtered_df), st.session_state.num_q)} 題</div>', unsafe_allow_html=True)
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
     if preview_mode:
         for i, item in enumerate(quiz_list):
-            st.write(f"**{i+1}. {item[cols['cn']]}**")
+            st.write(f"**[{item[cols['ch']]}] {i+1}. {item[cols['cn']]}**")
             st.write(f"原文：{item[cols['ja']]}")
             kana_val = item[cols['kana']] if cols['kana'] and pd.notna(item.get(cols['kana'])) else None
-            if kana_val:
-                st.write(f"讀音：{kana_val}")
+            if kana_val: st.write(f"讀音：{kana_val}")
             st.markdown(get_audio_html(item[cols['ja']], kana_val), unsafe_allow_html=True); st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
@@ -158,12 +164,12 @@ if df is not None:
             tokens = [s['content'] for s in struct if s['type'] == 'word']
             shuf_list = list(tokens); random.seed(st.session_state.q_idx); random.shuffle(shuf_list)
             st.session_state.curr_q_data = {
-                "ja": ja_txt, "cn": q_raw[cols['cn']],
+                "ja": ja_txt, "cn": q_raw[cols['cn']], "ch": q_raw[cols['ch']],
                 "kana": kana_txt, "struct": struct, "tokens": tokens, "shuf": shuf_list
             }
 
         q = st.session_state.curr_q_data
-        st.info(f"Q{st.session_state.q_idx + 1} | {q['cn']}")
+        st.info(f"第 {q['ch']} 章 | Q{st.session_state.q_idx + 1} | {q['cn']}")
 
         # A. 答案展示區
         curr_ans_copy = list(st.session_state.ans)
@@ -176,7 +182,7 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字池 (流式)
+        # B. 單字池
         st.caption("▼ 請點選單字按鈕")
         for idx, t in enumerate(q['shuf']):
             if idx not in st.session_state.used_history:
@@ -185,16 +191,12 @@ if df is not None:
 
         # C. 系統控制
         st.write(" ")
-        st.caption("▼ 系統操作")
         c_nav = st.columns(4)
         if c_nav[0].button("⬅ 退回"):
-            if st.session_state.used_history:
-                st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
+            if st.session_state.used_history: st.session_state.used_history.pop(); st.session_state.ans.pop(); st.rerun()
         if c_nav[1].button("🔄 重填"): reset_state(); st.rerun()
-        if c_nav[2].button("⏮ 上一題"): 
-            st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
-        if c_nav[3].button("⏭ 下一題"): 
-            st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
+        if c_nav[2].button("⏮ 上一題"): st.session_state.q_idx = max(0, st.session_state.q_idx-1); reset_state(); st.rerun()
+        if c_nav[3].button("⏭ 下一題"): st.session_state.q_idx = min(len(quiz_list)-1, st.session_state.q_idx+1); reset_state(); st.rerun()
 
         # D. 檢查與結果
         if len(st.session_state.ans) == len(q['tokens']) and not st.session_state.is_correct:
@@ -206,10 +208,9 @@ if df is not None:
         if st.session_state.is_correct:
             st.success("正解！🎉")
             if q['kana']: st.write(f"讀音：{q['kana']}")
-            # 答對後播放音檔，優先使用平假名輸入
             st.markdown(get_audio_html(q['ja'], q['kana']), unsafe_allow_html=True)
             if st.button("👉 下一題", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
-        st.balloons(); st.success("練習完成！")
-        if st.button("🔄 重新開始練習"): st.session_state.q_idx = 0; reset_state(); st.rerun()
+        st.balloons(); st.success("範圍練習完成！")
+        if st.button("🔄 重新開始此範圍練習"): st.session_state.q_idx = 0; reset_state(); st.rerun()
