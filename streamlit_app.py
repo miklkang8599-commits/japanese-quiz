@@ -1,14 +1,13 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v12.1 版本編號顯性化】
+【技術演進與邏輯追蹤表 - v12.2 語音與讀音同步修正】
 ----------------------------------------------------------------
-1. 新增功能：
-   - 在練習畫面頂部新增 st.caption(VERSION)，方便確認目前版本。
-2. 視覺修正：
-   - 維持單字按鈕 white-space: nowrap，確保長單字絕對橫向排列。
-   - 移除單字池的 st.columns，改用流式佈局避免擠壓。
-3. 核心鎖定：
-   - 預設練習 5 題、章節自然排序、平假名與題目精準鎖定。
+1. 核心修復 (語音不符問題)：
+   - 修改發音邏輯：若存在「平假名」欄位，TTS 將優先讀取平假名而非原文。
+   - 這能解決漢字讀音歧義(如「見当た」)造成的音檔與讀音不符。
+2. 穩定功能：
+   - 預設練習 5 題、章節自然排序、流式按鈕佈局(確保橫向)。
+   - 版本號顯性標注於頂部。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -21,7 +20,7 @@ import requests
 import base64
 
 # --- 定義版本編號 ---
-VERSION = "v12.1.20260307"
+VERSION = "v12.2.20260307"
 
 # --- 1. 頁面配置與 CSS ---
 st.set_page_config(page_title=f"🇯🇵 日文重組 {VERSION}", layout="wide")
@@ -31,7 +30,6 @@ st.markdown(f"""
     .block-container {{ padding: 0.8rem 0.5rem !important; max-width: 450px !important; margin: 0 auto !important; }}
     [data-testid="stHeader"] {{ display: none; }}
     
-    /* 答案區 */
     .res-box {{ 
         display: flex; flex-wrap: wrap; gap: 6px; background-color: #ffffff; padding: 10px; 
         border-radius: 10px; border: 2px solid #e5e7eb; min-height: 45px; 
@@ -56,7 +54,7 @@ st.markdown(f"""
     }}
     
     .stInfo {{ border-radius: 10px; font-size: 15px; margin-bottom: 5px; }}
-    .version-tag {{ font-size: 10px; color: #ccc; text-align: right; }}
+    .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: 10px; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -94,8 +92,11 @@ def get_sentence_structure(text):
             for t in tokens: struct.append({"type": "word", "content": t})
     return struct
 
-def get_audio_html(text):
-    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={text}"
+# 【核心更新】音檔播放優先讀取平假名
+def get_audio_html(text, kana=None):
+    # 如果有平假名讀音，優先讓 TTS 讀取平假名以確保發音精準
+    audio_input = kana if kana and pd.notna(kana) else text
+    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q={audio_input}"
     try:
         res = requests.get(tts_url)
         if res.status_code == 200:
@@ -113,8 +114,7 @@ if 'is_correct' not in st.session_state: st.session_state.is_correct = False
 if 'curr_q_data' not in st.session_state: st.session_state.curr_q_data = None
 if 'last_config' not in st.session_state: st.session_state.last_config = ""
 
-# --- 顯示標題與版本 ---
-st.title("🇯🇵 日文重組練習")
+# --- 頂部版本標示 ---
 st.markdown(f'<div class="version-tag">Version: {VERSION}</div>', unsafe_allow_html=True)
 
 df, cols = load_data()
@@ -143,22 +143,23 @@ if df is not None:
     if preview_mode:
         for i, item in enumerate(quiz_list):
             st.write(f"**{i+1}. {item[cols['cn']]}**")
-            st.write(f"{item[cols['ja']]}")
-            if cols['kana'] and pd.notna(item.get(cols['kana'])):
-                st.write(f"（{item[cols['kana']]}）")
-            st.markdown(get_audio_html(item[cols['ja']]), unsafe_allow_html=True); st.divider()
+            st.write(f"原文：{item[cols['ja']]}")
+            kana_val = item[cols['kana']] if cols['kana'] and pd.notna(item.get(cols['kana'])) else None
+            if kana_val:
+                st.write(f"讀音：{kana_val}")
+            st.markdown(get_audio_html(item[cols['ja']], kana_val), unsafe_allow_html=True); st.divider()
     
     elif st.session_state.q_idx < len(quiz_list):
         if st.session_state.curr_q_data is None:
             q_raw = quiz_list[st.session_state.q_idx]
             ja_txt = str(q_raw[cols['ja']]).strip()
+            kana_txt = q_raw.get(cols['kana']) if cols['kana'] else None
             struct = get_sentence_structure(ja_txt)
             tokens = [s['content'] for s in struct if s['type'] == 'word']
             shuf_list = list(tokens); random.seed(st.session_state.q_idx); random.shuffle(shuf_list)
             st.session_state.curr_q_data = {
                 "ja": ja_txt, "cn": q_raw[cols['cn']],
-                "kana": q_raw.get(cols['kana']) if cols['kana'] else None,
-                "struct": struct, "tokens": tokens, "shuf": shuf_list
+                "kana": kana_txt, "struct": struct, "tokens": tokens, "shuf": shuf_list
             }
 
         q = st.session_state.curr_q_data
@@ -175,7 +176,7 @@ if df is not None:
         ans_html += '</div>'
         st.markdown(ans_html, unsafe_allow_html=True)
 
-        # B. 單字池 (流式排列)
+        # B. 單字池 (流式)
         st.caption("▼ 請點選單字按鈕")
         for idx, t in enumerate(q['shuf']):
             if idx not in st.session_state.used_history:
@@ -205,7 +206,8 @@ if df is not None:
         if st.session_state.is_correct:
             st.success("正解！🎉")
             if q['kana']: st.write(f"讀音：{q['kana']}")
-            st.markdown(get_audio_html(q['ja']), unsafe_allow_html=True)
+            # 答對後播放音檔，優先使用平假名輸入
+            st.markdown(get_audio_html(q['ja'], q['kana']), unsafe_allow_html=True)
             if st.button("👉 下一題", type="primary", use_container_width=True): 
                 st.session_state.q_idx += 1; reset_state(); st.rerun()
     else:
