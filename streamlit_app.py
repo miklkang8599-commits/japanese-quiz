@@ -1,14 +1,15 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v12.2.3 章節輸入優化】
+【技術演進與邏輯追蹤表 - v12.2.4 範圍偵測與資料清洗修復】
 ----------------------------------------------------------------
-1. 交互優化 (針對章節選擇不便)：
-   - 將「起始章節」由 Selectbox 改為 Number Input，支援手動輸入三位數編號。
-   - 自動偵測該單元的最小與最大章節編號，防止輸入無效範圍。
-2. 邏輯穩定性：
-   - 維持 v12.2.2 的數值化過濾，確保三位數章節抓題 100% 正確。
+1. 核心修復 (範圍 0~0 錯誤)：
+   - 強化資料清洗：使用正則表達式強制提取章節欄位中的數字，排除非數字干擾。
+   - 修正數值轉換邏輯：確保 ch 欄位能正確識別為 100 等三位數。
+2. 介面防呆：
+   - 確保起始章節編號的 min/max 根據資料動態更新，不再鎖死在 0。
 3. 核心功能維持：
-   - 平假名優先發音、版本標註、流式按鈕佈局。
+   - 採用 v12.2 平假名優先發音。
+   - 維持流式單字按鈕排版。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -20,8 +21,8 @@ import re
 import requests
 import base64
 
-# --- 版本編號 ---
-VERSION = "v12.2.20260311.INPUT_FIX"
+# --- 版本號 ---
+VERSION = "v12.2.20260311.RANGE_FIX"
 
 # --- 1. 頁面配置 ---
 st.set_page_config(page_title=f"🇯🇵 日文重組 {VERSION}", layout="wide")
@@ -39,6 +40,7 @@ st.markdown(f"""
         min-width: 25px; border-bottom: 2px solid #afafaf; 
         text-align: center; font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }}
+    /* 強制單字橫向排列 */
     div.stButton > button {{
         width: auto !important; min-width: 45px !important; white-space: nowrap !important;
         border-radius: 12px !important; font-weight: bold !important;
@@ -68,6 +70,13 @@ def load_data():
         }
         return df.dropna(subset=["日文原文", "中文意譯"]), mapping
     except: return None, None
+
+def clean_ch_number(val):
+    """【關鍵修正】從字串中提取數字，例如將 '第100章' 轉為 100"""
+    try:
+        nums = re.findall(r'\d+', str(val))
+        return int(nums[0]) if nums else 0
+    except: return 0
 
 def get_sentence_structure(text):
     pts = ['は','が','を','に','へ','と','も','で','の','から','まで']
@@ -106,32 +115,31 @@ st.markdown(f'<div class="version-tag">Version: {VERSION}</div>', unsafe_allow_h
 df, cols = load_data()
 
 if df is not None:
-    # 確保章節列為數值型
-    df[cols['ch']] = pd.to_numeric(df[cols['ch']], errors='coerce').fillna(0).astype(int)
+    # 【核心修正】資料預處理：強制提取數字型章節編號
+    df[cols['ch']] = df[cols['ch']].apply(clean_ch_number)
 
     with st.expander("⚙️ 練習範圍設定", expanded=True):
-        # 1. 選擇單元
         unit_names = sorted(df[cols['unit']].astype(str).unique())
         sel_unit = st.selectbox("1. 選擇單元", unit_names)
         unit_df = df[df[cols['unit']].astype(str) == sel_unit]
         
-        # 取得該單元的章節極值
+        # 動態計算當前單元的章節範圍
         min_ch = int(unit_df[cols['ch']].min())
         max_ch = int(unit_df[cols['ch']].max())
         
-        # 【核心修正】將 Selectbox 改為 Number Input
+        # 修正：確保 min_ch 小於等於 max_ch，避免 Streamlit 崩潰
+        if min_ch > max_ch: min_ch, max_ch = 0, 0
+
         sel_start_ch = st.number_input(
-            f"2. 起始章節編號 (範圍: {min_ch} ~ {max_ch})", 
+            f"2. 起始章節編號 (本單元範圍: {min_ch} ~ {max_ch})", 
             min_value=min_ch, 
             max_value=max_ch, 
             value=min_ch,
             step=1
         )
         
-        # 3. 設定題數
         st.session_state.num_q = st.number_input("3. 練習總題數", min_value=1, value=st.session_state.num_q)
         
-        # 偵測配置變更
         current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
         if st.session_state.last_config != current_config:
             st.session_state.last_config = current_config
@@ -141,11 +149,11 @@ if df is not None:
         filtered_df = unit_df[unit_df[cols['ch']] >= int(sel_start_ch)].reset_index(drop=True)
         preview_mode = st.checkbox("開啟預習模式")
         
-        st.markdown(f'<div class="range-info">📍 練習：{sel_unit} / 第 {sel_start_ch} 章起 / 剩餘可用題數: {len(filtered_df)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="range-info">📍 練習：{sel_unit} / 第 {sel_start_ch} 章起 / 可練習總題數: {len(filtered_df)}</div>', unsafe_allow_html=True)
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # ... 後續答題邏輯與 v12.2.2 完全一致
+    # ... 後續答題邏輯維持 v12.2.3 ...
     if preview_mode:
         for i, item in enumerate(quiz_list):
             st.write(f"**[{item[cols['ch']]}] {i+1}. {item[cols['cn']]}**")
@@ -169,7 +177,6 @@ if df is not None:
         q = st.session_state.curr_q_data
         st.info(f"第 {q['ch']} 章 | Q{st.session_state.q_idx + 1} | {q['cn']}")
 
-        # 答題介面繪製...
         curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in q['struct']:
