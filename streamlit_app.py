@@ -1,15 +1,14 @@
 """
 ================================================================
-【技術演進與邏輯追蹤表 - v12.2.4 範圍偵測與資料清洗修復】
+【技術演進與邏輯追蹤表 - v12.2.5 數值邏輯終極修復】
 ----------------------------------------------------------------
-1. 核心修復 (範圍 0~0 錯誤)：
-   - 強化資料清洗：使用正則表達式強制提取章節欄位中的數字，排除非數字干擾。
-   - 修正數值轉換邏輯：確保 ch 欄位能正確識別為 100 等三位數。
-2. 介面防呆：
-   - 確保起始章節編號的 min/max 根據資料動態更新，不再鎖死在 0。
-3. 核心功能維持：
-   - 採用 v12.2 平假名優先發音。
-   - 維持流式單字按鈕排版。
+1. 核心修復 (11 號章節跑出 100 號題)：
+   - 強制類型轉換：在過濾 filtered_df 之前，強制將選單值與資料庫欄位
+     同時轉為 int64 數值型態，禁用字串比對。
+   - 修正過濾運算式，確保數值大小關係絕對精準 (100 > 11)。
+2. 穩定性維持：
+   - 延續 v12.2.4 的資料清洗 (clean_ch_number)。
+   - 維持流式單字按鈕、版本標註與平假名優先發音。
 ----------------------------------------------------------------
 ================================================================
 """
@@ -22,7 +21,7 @@ import requests
 import base64
 
 # --- 版本號 ---
-VERSION = "v12.2.20260311.RANGE_FIX"
+VERSION = "v12.2.20260314.NUMERIC_STRICT"
 
 # --- 1. 頁面配置 ---
 st.set_page_config(page_title=f"🇯🇵 日文重組 {VERSION}", layout="wide")
@@ -40,7 +39,6 @@ st.markdown(f"""
         min-width: 25px; border-bottom: 2px solid #afafaf; 
         text-align: center; font-size: 16px; color: #1cb0f6; font-weight: bold; margin: 0 2px;
     }}
-    /* 強制單字橫向排列 */
     div.stButton > button {{
         width: auto !important; min-width: 45px !important; white-space: nowrap !important;
         border-radius: 12px !important; font-weight: bold !important;
@@ -48,7 +46,7 @@ st.markdown(f"""
         border-bottom: 4px solid #e5e7eb !important; margin: 4px 2px !important;
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: 10px; }}
-    .range-info {{ font-size: 12px; color: #666; background: #f0f7ff; padding: 5px 10px; border-radius: 5px; margin-bottom: 10px; }}
+    .range-info {{ font-size: 12px; color: #666; background: #fef3c7; padding: 8px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #fcd34d; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -72,7 +70,7 @@ def load_data():
     except: return None, None
 
 def clean_ch_number(val):
-    """【關鍵修正】從字串中提取數字，例如將 '第100章' 轉為 100"""
+    """從字串中提取數字，並確保轉為純整數"""
     try:
         nums = re.findall(r'\d+', str(val))
         return int(nums[0]) if nums else 0
@@ -115,29 +113,27 @@ st.markdown(f'<div class="version-tag">Version: {VERSION}</div>', unsafe_allow_h
 df, cols = load_data()
 
 if df is not None:
-    # 【核心修正】資料預處理：強制提取數字型章節編號
-    df[cols['ch']] = df[cols['ch']].apply(clean_ch_number)
+    # 資料預處理：強制轉為數值整數型態
+    df[cols['ch']] = df[cols['ch']].apply(clean_ch_number).astype(int)
 
     with st.expander("⚙️ 練習範圍設定", expanded=True):
         unit_names = sorted(df[cols['unit']].astype(str).unique())
         sel_unit = st.selectbox("1. 選擇單元", unit_names)
-        unit_df = df[df[cols['unit']].astype(str) == sel_unit]
+        unit_df = df[df[cols['unit']].astype(str) == sel_unit].copy()
         
-        # 動態計算當前單元的章節範圍
         min_ch = int(unit_df[cols['ch']].min())
         max_ch = int(unit_df[cols['ch']].max())
         
-        # 修正：確保 min_ch 小於等於 max_ch，避免 Streamlit 崩潰
-        if min_ch > max_ch: min_ch, max_ch = 0, 0
-
+        # 2. 起始章節 (使用 Number Input 並強制 int 型態)
         sel_start_ch = st.number_input(
-            f"2. 起始章節編號 (本單元範圍: {min_ch} ~ {max_ch})", 
+            f"2. 起始章節編號 ({min_ch} ~ {max_ch})", 
             min_value=min_ch, 
             max_value=max_ch, 
             value=min_ch,
             step=1
         )
         
+        # 3. 題數
         st.session_state.num_q = st.number_input("3. 練習總題數", min_value=1, value=st.session_state.num_q)
         
         current_config = f"{sel_unit}_{sel_start_ch}_{st.session_state.num_q}"
@@ -146,14 +142,16 @@ if df is not None:
             st.session_state.q_idx = 0
             reset_state(); st.rerun()
 
-        filtered_df = unit_df[unit_df[cols['ch']] >= int(sel_start_ch)].reset_index(drop=True)
-        preview_mode = st.checkbox("開啟預習模式")
+        # 【終極修復】強制數值過濾，解決 11 號跑出 100 號的問題
+        # 強迫 sel_start_ch 轉整數，且與資料列的整數進行數學比對
+        start_val = int(sel_start_ch)
+        filtered_df = unit_df[unit_df[cols['ch']] >= start_val].sort_values(by=cols['ch']).reset_index(drop=True)
         
-        st.markdown(f'<div class="range-info">📍 練習：{sel_unit} / 第 {sel_start_ch} 章起 / 可練習總題數: {len(filtered_df)}</div>', unsafe_allow_html=True)
+        preview_mode = st.checkbox("開啟預習模式")
+        st.markdown(f'<div class="range-info">📍 模式：數值精確比對 / 起點：第 {sel_start_ch} 章 / 剩餘題數：{len(filtered_df)}</div>', unsafe_allow_html=True)
 
     quiz_list = filtered_df.head(st.session_state.num_q).to_dict('records')
 
-    # ... 後續答題邏輯維持 v12.2.3 ...
     if preview_mode:
         for i, item in enumerate(quiz_list):
             st.write(f"**[{item[cols['ch']]}] {i+1}. {item[cols['cn']]}**")
@@ -170,13 +168,14 @@ if df is not None:
             tokens = [s['content'] for s in struct if s['type'] == 'word']
             shuf_list = list(tokens); random.seed(st.session_state.q_idx); random.shuffle(shuf_list)
             st.session_state.curr_q_data = {
-                "ja": ja_txt, "cn": q_raw[cols['cn']], "ch": q_raw[cols['ch']],
+                "ja": ja_txt, "cn": q_raw[cols['cn']], "ch": int(q_raw[cols['ch']]),
                 "kana": kana_txt, "struct": struct, "tokens": tokens, "shuf": shuf_list
             }
 
         q = st.session_state.curr_q_data
         st.info(f"第 {q['ch']} 章 | Q{st.session_state.q_idx + 1} | {q['cn']}")
 
+        # 答題 UI 部分維持不變...
         curr_ans_copy = list(st.session_state.ans)
         ans_html = '<div class="res-box">'
         for s in q['struct']:
